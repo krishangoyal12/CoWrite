@@ -33,12 +33,12 @@ const signup = async (req, res) => {
 
         await newUser.save();
 
-        const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const jwtToken = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-        res.cookie('token', token, {
+        res.cookie('token', jwtToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000
         })
 
@@ -49,7 +49,7 @@ const signup = async (req, res) => {
                 name: newUser.name,
                 email: newUser.email
             },
-            token
+            token: jwtToken
         });
 
     } catch (error) {
@@ -87,10 +87,10 @@ const googleSignup = async (req, res) => {
 
         const jwtToken = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-        res.cookie('token', token, {
+        res.cookie('token', jwtToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000
         })
 
@@ -132,12 +132,12 @@ const login = async (req, res) => {
             return res.status(401).json({ message: 'Email or password is incorrect' });
         }
 
-        const token = jwt.sign({ id: userExist._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const jwtToken = jwt.sign({ id: userExist._id }, process.env.JWT_SECRET, { expiresIn: '7d' });
 
-        res.cookie('token', token, {
+        res.cookie('token', jwtToken, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000
         })
 
@@ -148,7 +148,7 @@ const login = async (req, res) => {
                 name: userExist.name,
                 email: userExist.email
             },
-            token
+            token: jwtToken
         });
 
     } catch (error) {
