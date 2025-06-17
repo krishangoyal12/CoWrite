@@ -67,7 +67,7 @@
 This project is actively being developed. Contributions and ideas are welcome!
 
 ---
-**Netlify**:- https://krishan-cowrite.netlify.app
+**Netlify**:- https://krishan-cowrite.netlify.app  
 **Render**:- https://cowrite-x48q.onrender.com
 
 Stay tuned for updates, and feel free to fork, star ⭐, or contribute!
