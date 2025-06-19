@@ -159,15 +159,41 @@ const login = async (req, res) => {
 };
 
 const me = async (req, res) => {
-  try {
-    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.set('Pragma', 'no-cache');
-    res.set('Expires', '0');
-    res.set('Surrogate-Control', 'no-store');
-    res.json({ user: req.user });
-  } catch {
-    res.status(401).json({ message: "Unauthorized" });
-  }
+    try {
+        res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+        res.set('Surrogate-Control', 'no-store');
+
+        const user = await User.findById(req.user.id).select('name email signupMethod');
+        if (!user) {
+            return res.status(404).json({ user: null });
+        }
+
+        res.json({
+            user: {
+                id: user._id,
+                name: user.name,
+                email: user.email,
+                authProvider: user.signupMethod || "local"
+            }
+        });
+    } catch {
+        res.status(401).json({ message: "Unauthorized" });
+    }
 };
 
-module.exports = { signup, login, googleSignup, me };
+const logout = async (req, res) => {
+    try {
+        res.clearCookie('token', {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === 'production',
+            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+        });
+        return res.status(200).json({ message: "Logged out successfully" });
+    } catch (error) {
+        return res.status(500).json({ message: error.message });
+    }
+};
+
+module.exports = { signup, login, googleSignup, me, logout };

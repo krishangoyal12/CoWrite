@@ -5,12 +5,17 @@ import Signup from "./Pages/Signup";
 import Dashboard from "./Pages/Dashboard";
 import { Toaster } from "react-hot-toast";
 import PrivateRoute from "../Components/PrivateRoute";
+import Navbar from "../Components/Navbar";
+import LandingPage from "./Pages/LandingPage";
+import EditorPage from "./Pages/Editor";
 
 function App() {
   return (
     <>
       <Toaster />
+      <Navbar/>
       <Routes>
+        <Route path="/" element={<LandingPage/>}/>
         <Route
           path="/dashboard"
           element={
@@ -21,6 +26,7 @@ function App() {
         />
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
+        <Route path="/editor/:id" element={<EditorPage/>} />
       </Routes>
     </>
   );

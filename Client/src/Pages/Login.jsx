@@ -3,10 +3,12 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { GoogleLogin } from "@react-oauth/google";
 import { jwtDecode } from "jwt-decode";
+import { useAuth } from "../../Context/useAuth";
 
 const baseURL = import.meta.env.VITE_URL;
 
 export default function Login() {
+  const { setAuth } = useAuth();
   const [form, setForm] = useState({ email: "", password: "" });
   const [animate, setAnimate] = useState(false);
   const navigate = useNavigate();
@@ -45,6 +47,7 @@ export default function Login() {
       });
       const data = await res.json();
       if (res.ok) {
+        setAuth(data.user);
         toast.success("Login successful!");
         setForm({ email: "", password: "" });
         navigate("/dashboard");
@@ -71,6 +74,7 @@ export default function Login() {
       });
       const data = await res.json();
       if (res.ok) {
+        setAuth(data.user);
         toast.success("Google login successful!");
         navigate("/dashboard");
       } else {

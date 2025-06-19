@@ -63,6 +63,50 @@
 
 ---
 
+## ✅ Day 2 Progress
+
+### 1. Document Dashboard
+- Created a document dashboard page to list all user documents.
+- Added functionality to create, rename, and delete documents from the dashboard.
+- Enabled navigation from the dashboard to the editor for any document.
+
+### 2. Editor Integration
+- Integrated the rich text editor()tip-tap into the main application flow.
+- Connected the editor to the backend for loading and saving documents.
+- Ensured seamless transition between the dashboard and the editor.
+
+### 3. Basic text decoration functionality
+- Implemented the functionality for bold, italic, strikethrough by using tip-tap's inbuilt extension.
+
+### 4. Font Size and Font Family Functionality
+- Implemented a custom `FontStyle` mark extension to support inline font size and font family changes.
+- Added font size and font family dropdowns to the editor toolbar.
+- Ensured font size and font family can be applied to any selection, including inside headings and paragraphs.
+
+### 5. Autosave Feature
+- Implemented autosave functionality to save the editor content to the backend every 3 seconds.
+- Used `setInterval` within a React `useEffect` to trigger the save operation.
+- Ensured autosave does not interfere with manual save operations.
+
+### 6. Heading Functionality
+- Verified and fixed heading support using the default TipTap `Heading` extension.
+- Ensured selecting a heading from the toolbar correctly changes the block type and displays the appropriate HTML (`<h1>`, `<h2>`, etc.).
+- Confirmed compatibility of headings with font size and font family marks.
+
+---
+
+## 📝 How to Use
+
+- **Font Size/Family:** Select text and choose a font size or family from the toolbar to apply the style.
+- **Headings:** Use the dropdown to switch between normal text and headings (H1–H6).
+- **Autosave:** The editor automatically saves your work every 3 seconds.
+- **Manual Save:** Click the "Save" button to save and return to the dashboard.
+- **Dashboard:** View, create, rename, and delete your documents from the dashboard. Click any document to open it in the editor.
+
+**End of Day 2**
+
+---
+
 ## 🚧 Work in Progress
 This project is actively being developed. Contributions and ideas are welcome!
 
