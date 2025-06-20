@@ -2,10 +2,10 @@
   "name": "yjs-server",
   "version": "1.0.0",
   "scripts": {
-    "start": "node yjs-server.js"
+    "start": "y-websocket-server --port $PORT"
   },
   "dependencies": {
-    "y-websocket": "^1.5.0",
+    "y-websocket": "1.4.5",
     "yjs": "^13.6.21",
     "ws": "^8.0.0"
   }
