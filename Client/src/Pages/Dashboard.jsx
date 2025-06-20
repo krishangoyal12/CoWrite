@@ -2,10 +2,10 @@ import React, { useEffect, useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { FiPlus } from "react-icons/fi";
+import { useAuth } from "../../Context/useAuth";
 
 const baseURL = import.meta.env.VITE_URL;
 
-// Utility to strip HTML tags for preview
 function stripHtml(html) {
   const div = document.createElement("div");
   div.innerHTML = html;
@@ -13,6 +13,7 @@ function stripHtml(html) {
 }
 
 export default function Dashboard() {
+  const { auth: user } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [menuOpenId, setMenuOpenId] = useState(null);
@@ -116,7 +117,10 @@ export default function Dashboard() {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Untitled Document", content: "<p></p>" }),
+        body: JSON.stringify({
+          title: "Untitled Document",
+          content: "<p></p>",
+        }),
       });
       const data = await res.json();
       if (res.ok && data.data && data.data._id) {
@@ -171,8 +175,25 @@ export default function Dashboard() {
               key={doc._id}
               className="relative flex flex-col group cursor-pointer rounded-2xl shadow-lg hover:shadow-2xl transition-transform duration-200 bg-gradient-to-br from-gray-50 to-white border border-gray-200 hover:scale-[1.025] hover:-rotate-1"
               style={{ minHeight: 240 }}
-              onClick={() => navigate(`/editor/${doc._id}`)}
+              onClick={() => {
+                // Prevent navigation if a modal is open for this doc
+                if (renameId !== doc._id && deleteId !== doc._id) {
+                  navigate(`/editor/${doc._id}`);
+                }
+              }}
             >
+              {/* Badge for owned/shared */}
+              {user &&
+                doc.owner &&
+                (doc.owner._id === user.id ? (
+                  <span className="absolute top-3 left-3 bg-blue-100 text-blue-800 px-2 py-0.5 rounded text-xs font-semibold z-10">
+                    You own this
+                  </span>
+                ) : (
+                  <span className="absolute top-3 left-3 bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded text-xs font-semibold z-10">
+                    Shared with you
+                  </span>
+                ))}
               {/* Paper-like preview */}
               <div className="flex-1 px-7 pt-7 pb-5 bg-[#fcfcfc] rounded-t-2xl border-b border-gray-100 font-serif relative overflow-hidden">
                 {/* Optional watermark icon */}
@@ -183,20 +204,31 @@ export default function Dashboard() {
                   strokeWidth="1"
                   viewBox="0 0 24 24"
                 >
-                  <rect x="4" y="4" width="16" height="16" rx="2" stroke="currentColor" />
+                  <rect
+                    x="4"
+                    y="4"
+                    width="16"
+                    height="16"
+                    rx="2"
+                    stroke="currentColor"
+                  />
                   <line x1="8" y1="8" x2="16" y2="8" stroke="currentColor" />
                   <line x1="8" y1="12" x2="16" y2="12" stroke="currentColor" />
                   <line x1="8" y1="16" x2="12" y2="16" stroke="currentColor" />
                 </svg>
                 <div className="text-gray-700 text-[15px] whitespace-pre-line line-clamp-5 min-h-[90px]">
-                  {doc.content
-                    ? stripHtml(doc.content).slice(0, 200) +
-                      (stripHtml(doc.content).length > 200 ? "..." : "")
-                    : <span className="text-gray-400 italic">No content yet.</span>}
+                  {doc.content ? (
+                    stripHtml(doc.content).slice(0, 200) +
+                    (stripHtml(doc.content).length > 200 ? "..." : "")
+                  ) : (
+                    <span className="text-gray-400 italic">
+                      No content yet.
+                    </span>
+                  )}
                 </div>
               </div>
               {/* Footer with title */}
-              <div className="bg-blue-50 border-t border-blue-100 px-7 py-3 flex items-center rounded-b-2xl">
+              <div className="bg-blue-50 border-t border-blue-100 px-7 py-3 flex itemrekas-center rounded-b-2xl">
                 <span className="text-base font-semibold text-blue-700 truncate">
                   {doc.title || "Untitled Document"}
                 </span>
@@ -204,7 +236,7 @@ export default function Dashboard() {
               {/* Menu button */}
               <button
                 className="absolute top-3 right-3 p-1 rounded-full hover:bg-gray-100 transition z-10"
-                onClick={e => {
+                onClick={(e) => {
                   e.stopPropagation();
                   setMenuOpenId(menuOpenId === doc._id ? null : doc._id);
                 }}
@@ -223,7 +255,7 @@ export default function Dashboard() {
                 <div
                   ref={menuRef}
                   className="absolute z-20 top-10 right-3 bg-white border border-gray-200 rounded shadow-lg py-1 w-28"
-                  onClick={e => e.stopPropagation()}
+                  onClick={(e) => e.stopPropagation()}
                 >
                   <button
                     className="block w-full text-left px-4 py-2 text-sm hover:bg-blue-50 hover:text-blue-700"
@@ -243,8 +275,12 @@ export default function Dashboard() {
                 </div>
               )}
               {renameId === doc._id && (
-                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-20">
+                <div
+                  className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50"
+                  onClick={() => setRenameId(null)}
+                >
                   <form
+                    onClick={(e) => e.stopPropagation()}
                     onSubmit={handleRenameSubmit}
                     className="bg-white rounded-lg shadow-lg p-6 flex flex-col gap-4 w-80"
                   >
@@ -276,33 +312,47 @@ export default function Dashboard() {
                   </form>
                 </div>
               )}
-              {deleteId === doc._id && (
-                <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-30">
-                  <div className="bg-white rounded-lg shadow-lg p-6 w-80 flex flex-col gap-4">
-                    <h2 className="text-lg font-semibold text-red-600">Delete Document</h2>
-                    <p className="text-gray-700">
-                      Are you sure you want to delete <span className="font-bold">{doc.title || "Untitled Document"}</span>?
-                      This action cannot be undone.
-                    </p>
-                    <div className="flex justify-end gap-2">
-                      <button
-                        className="px-4 py-1 rounded bg-gray-200 hover:bg-gray-300"
-                        onClick={() => setDeleteId(null)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        className="px-4 py-1 rounded bg-red-600 text-white hover:bg-red-700"
-                        onClick={handleDelete}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Delete Modal rendered ONCE outside the map */}
+      {deleteId && (
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50"
+          onClick={() => setDeleteId(null)}
+        >
+          <div
+            className="bg-white rounded-lg shadow-lg p-6 w-80 flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-lg font-semibold text-red-600">
+              Delete Document
+            </h2>
+            <p className="text-gray-700">
+              Are you sure you want to delete{" "}
+              <span className="font-bold">
+                {documents.find((doc) => doc._id === deleteId)?.title ||
+                  "Untitled Document"}
+              </span>
+              ? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-2">
+              <button
+                className="px-4 py-1 rounded bg-gray-200 hover:bg-gray-300"
+                onClick={() => setDeleteId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+                onClick={handleDelete}
+              >
+                Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -315,6 +365,6 @@ export default function Dashboard() {
       >
         <FiPlus />
       </button>
-      </div>
+    </div>
   );
 }

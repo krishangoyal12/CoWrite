@@ -13,7 +13,11 @@ const documentSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'User',
         required: true
-    }
+    },
+    collaborators:[{
+        type: Schema.Types.ObjectId,
+        ref: 'User'
+    }]
 }, {timestamps: true});
 
 const documentModel = model('Document', documentSchema)

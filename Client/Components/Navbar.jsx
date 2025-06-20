@@ -14,7 +14,7 @@ export default function Navbar() {
       credentials: "include",
     });
     setAuth(false);
-    navigate("/login");
+    navigate("/");
   };
 
   if (auth === null) return null;

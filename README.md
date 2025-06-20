@@ -107,6 +107,32 @@
 
 ---
 
+# CoWrite - Day 3 Progress & Local Setup Guide
+
+## ✅ Day 3 Progress
+
+### 1. Real-Time Collaboration with Yjs WebSocket Server
+- Set up a **dedicated Yjs WebSocket server** in a new `yjs-server/` folder for real-time collaborative editing.
+- Configured the frontend to use an environment variable (`VITE_WEBSOCKET_URL`) for the WebSocket server URL.
+- Verified that multiple users can collaborate in real time with unique cursor colors and names.
+
+### 2. Collaboration Cursor UI Improvements
+- Updated the cursor UI to display only the colored caret and user name above the caret (Google Docs style).
+- Hid the selection bar and label for remote selections using custom CSS.
+
+### 3. Collaborator Permissions
+- Ensured that collaborators can view the document title in both the dashboard and editor, but **only the owner can edit the title**.
+
+### 4. Environment Variable Management
+- Moved all environment-specific URLs (API, WebSocket) to `.env` files for easy switching between local and production environments.
+
+### 5. Project Structure & Clean-Up
+- Created a separate `yjs-server/` folder with its own `package.json` and dependencies.
+
+**End of Day 3**
+
+---
+
 ## 🚧 Work in Progress
 This project is actively being developed. Contributions and ideas are welcome!
 

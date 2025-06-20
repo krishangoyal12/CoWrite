@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -18,8 +18,12 @@ import {
   MdFormatAlignRight,
   MdFormatAlignJustify,
 } from "react-icons/md";
+import * as Y from "yjs";
+import { WebsocketProvider } from "y-websocket";
+import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import { useAuth } from "../../Context/useAuth";
 
-// --- Color grid and utility ---
 const COLOR_GRID = [
   "#000000",
   "#434343",
@@ -36,7 +40,7 @@ const COLOR_GRID = [
   "#9900ff",
   "#ff00ff",
   "#ff99cc",
-]; // 5x3 grid
+];
 
 function ColorIcon({ color }) {
   return (
@@ -91,10 +95,34 @@ const FONT_FAMILIES = [
   { label: "Verdana", value: "Verdana, sans-serif" },
 ];
 
+const COLLAB_COLORS = [
+  "#007bff",
+  "#e83e8c",
+  "#fd7e14",
+  "#28a745",
+  "#20c997",
+  "#6f42c1",
+  "#17a2b8",
+  "#ffc107",
+  "#dc3545",
+  "#343a40",
+];
+
+// Assign a unique color to each user based on their id or email
+function getUserColor(userIdOrEmail) {
+  if (!userIdOrEmail) return COLLAB_COLORS[0];
+  let hash = 0;
+  for (let i = 0; i < userIdOrEmail.length; i++) {
+    hash = userIdOrEmail.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return COLLAB_COLORS[Math.abs(hash) % COLLAB_COLORS.length];
+}
+
 export default function Editor() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [docTitle, setDocTitle] = useState("");
+  const [docOwnerId, setDocOwnerId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [headingLevel, setHeadingLevel] = useState("paragraph");
   const [fontSize, setFontSize] = useState("16px");
@@ -103,6 +131,17 @@ export default function Editor() {
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [customColor, setCustomColor] = useState("#000000");
   const saveTimeout = useRef(null);
+  const { auth: user } = useAuth();
+
+  const [collaboratorEmail, setCollaboratorEmail] = useState("");
+  const [collaborators, setCollaborators] = useState([]);
+  const [adding, setAdding] = useState(false);
+
+  const ydoc = useMemo(() => new Y.Doc(), []);
+  const provider = useMemo(
+    () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc),
+    [id, ydoc]
+  );
 
   const editor = useEditor({
     extensions: [
@@ -114,8 +153,15 @@ export default function Editor() {
       TextAlign.configure({
         types: ["heading", "paragraph"],
       }),
+      Collaboration.configure({ document: ydoc }),
+      CollaborationCursor.configure({
+        provider,
+        user: {
+          name: user?.name || "Guest",
+          color: getUserColor(user?.id || user?.email || "guest"),
+        },
+      }),
     ],
-    content: "<p></p>",
     autofocus: true,
     editable: !loading,
     onUpdate: ({ editor }) => {
@@ -133,12 +179,57 @@ export default function Editor() {
     },
   });
 
+  // Fetch collaborators
+  const fetchCollaborators = async () => {
+    try {
+      const res = await fetch(`${baseURL}/api/documents/${id}`, {
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok && data.data?.collaborators) {
+        setCollaborators(data.data.collaborators);
+      }
+    } catch {
+      //
+    }
+  };
+
+  useEffect(() => {
+    fetchCollaborators();
+    // eslint-disable-next-line
+  }, [id]);
+
+  // Add collaborator
+  const handleAddCollaborator = async () => {
+    setAdding(true);
+    try {
+      const res = await fetch(`${baseURL}/api/documents/${id}/collaborators`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: collaboratorEmail }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success("Collaborator added!");
+        setCollaboratorEmail("");
+        fetchCollaborators();
+      } else {
+        toast.error(data.message || "Failed to add collaborator");
+      }
+    } catch {
+      toast.error("Failed to add collaborator");
+    }
+    setAdding(false);
+  };
+
   useEffect(() => {
     if (!editor) return;
 
     const loadDocument = async () => {
       if (id === "new") {
         setDocTitle("Untitled Document");
+        setDocOwnerId(user?.id); // New doc, owner is current user
         editor.commands.setContent("<p></p>");
         editor.setEditable(true);
         setLoading(false);
@@ -155,11 +246,13 @@ export default function Editor() {
 
         const title = data.data?.title || "Untitled Document";
         setDocTitle(title);
+        setDocOwnerId(data.data?.owner?._id || data.data?.owner); // Save owner id
         editor.setEditable(true);
         setLoading(false);
       } catch {
         toast.error("Failed to load document");
         setDocTitle("Untitled Document");
+        setDocOwnerId(null);
         editor.commands.setContent("<p></p>");
         editor.setEditable(true);
         setLoading(false);
@@ -167,9 +260,9 @@ export default function Editor() {
     };
 
     loadDocument();
-  }, [id, editor]);
+  }, [id, editor, user]);
 
-  // --- Save Title (optional, not collaborative) ---
+  // --- Save Title and Content (autosave) ---
   useEffect(() => {
     if (!editor || loading) return;
 
@@ -193,6 +286,7 @@ export default function Editor() {
         },
         body: JSON.stringify({
           title: docTitle,
+          content: editor.getHTML(),
         }),
       });
       // Optionally show a subtle autosave indicator here
@@ -272,6 +366,39 @@ export default function Editor() {
 
   return (
     <div className="fixed inset-0 bg-gray-100 z-50 flex flex-col">
+      {/* Collaborator Management (Owner Only) */}
+      <div className="flex items-center gap-3 px-8 py-2 bg-blue-50 border-b border-blue-100">
+        <input
+          type="email"
+          value={collaboratorEmail}
+          onChange={(e) => setCollaboratorEmail(e.target.value)}
+          placeholder="Invite collaborator by email"
+          className="border px-3 py-1 rounded w-64"
+          disabled={adding}
+        />
+        <button
+          onClick={handleAddCollaborator}
+          className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700"
+          disabled={adding || !collaboratorEmail}
+        >
+          {adding ? "Adding..." : "Add"}
+        </button>
+        <div className="ml-6 text-sm text-gray-700">
+          <span className="font-semibold">Collaborators:</span>
+          {collaborators.length === 0 && (
+            <span className="ml-2 text-gray-400">None</span>
+          )}
+          {collaborators.map((c) => (
+            <span
+              key={typeof c === "object" && c._id ? c._id : c}
+              className="ml-2 bg-gray-200 px-2 py-0.5 rounded"
+            >
+              {typeof c === "object" ? c.email || c.username || c._id : c}
+            </span>
+          ))}
+        </div>
+      </div>
+
       <div className="flex items-center bg-white px-8 py-3 shadow h-16 border-b border-gray-200">
         <div className="flex items-center gap-3 select-none">
           <img src="/logo.png" alt="CoWrite Logo" className="w-10 h-10" />
@@ -280,13 +407,25 @@ export default function Editor() {
           </span>
         </div>
         <div className="ml-8 flex-1">
-          <input
-            type="text"
-            value={docTitle}
-            onChange={(e) => setDocTitle(e.target.value)}
-            className="bg-transparent text-xl font-semibold text-gray-800 border-b border-gray-200 focus:border-blue-500 outline-none px-2 py-1 w-full max-w-lg"
-            placeholder="Document Title"
-          />
+          {user?.id === docOwnerId ? (
+            <input
+              type="text"
+              value={docTitle}
+              onChange={(e) => setDocTitle(e.target.value)}
+              className="bg-transparent text-xl font-semibold text-gray-800 border-b border-gray-200 focus:border-blue-500 outline-none px-2 py-1 w-full max-w-lg"
+              placeholder="Document Title"
+            />
+          ) : (
+            <input
+              type="text"
+              value={docTitle}
+              disabled
+              className="bg-transparent text-xl font-semibold text-gray-800 border-b border-gray-200 px-2 py-1 w-full max-w-lg opacity-70 cursor-not-allowed"
+              readOnly
+              tabIndex={-1}
+              aria-label="Document Title (read only)"
+            />
+          )}
         </div>
         <button
           onClick={handleSave}
