@@ -106,7 +106,7 @@ export default function Editor() {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({ history: false }),
       TextStyle,
       FontStyle,
       Underline,
@@ -154,11 +154,7 @@ export default function Editor() {
         if (!res.ok) throw new Error();
 
         const title = data.data?.title || "Untitled Document";
-        const content =
-          data.data?.content?.trim() !== "" ? data.data.content : "<p></p>";
-
         setDocTitle(title);
-        editor.commands.setContent(content);
         editor.setEditable(true);
         setLoading(false);
       } catch {
@@ -173,6 +169,7 @@ export default function Editor() {
     loadDocument();
   }, [id, editor]);
 
+  // --- Save Title (optional, not collaborative) ---
   useEffect(() => {
     if (!editor || loading) return;
 
@@ -187,9 +184,8 @@ export default function Editor() {
   }, [editor, docTitle, id, loading]);
 
   const saveDocument = async () => {
-    const html = editor?.getHTML();
     try {
-      const res = await fetch(`${baseURL}/api/documents/${id}`, {
+      await fetch(`${baseURL}/api/documents/${id}`, {
         method: "PUT",
         credentials: "include",
         headers: {
@@ -197,11 +193,8 @@ export default function Editor() {
         },
         body: JSON.stringify({
           title: docTitle,
-          content: html,
         }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.message);
       // Optionally show a subtle autosave indicator here
     } catch {
       // Optionally handle autosave error silently
@@ -401,17 +394,21 @@ export default function Editor() {
                 ))}
               </div>
               <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
-                <input
-                  type="color"
-                  value={customColor}
-                  onChange={handleCustomColor}
-                  className="w-8 h-8 border border-gray-200 rounded cursor-pointer"
-                  title="Custom Color"
-                  style={{ padding: 0, background: "none" }}
-                />
-                <span className="text-xs text-gray-600 font-medium">
-                  Custom
-                </span>
+                <label className="relative">
+                  <input
+                    type="color"
+                    value={customColor}
+                    onChange={handleCustomColor}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    title="Custom Color"
+                  />
+                  <span
+                    className="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center"
+                    style={{ background: customColor }}
+                  >
+                    <MdColorize className="text-xl text-gray-700" />
+                  </span>
+                </label>
               </div>
             </div>
           )}
