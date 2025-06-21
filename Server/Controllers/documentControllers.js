@@ -9,7 +9,7 @@ const getAllDocuments = async (req, res) => {
         { collaborators: req.user.id }
       ]
     })
-      .populate('owner', 'name email')
+      .populate('owner', '_id name email')
       .sort({ updatedAt: -1 });
     if (documents.length === 0) {
       return res.status(200).json({

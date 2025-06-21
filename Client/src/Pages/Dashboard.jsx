@@ -228,7 +228,7 @@ export default function Dashboard() {
                 </div>
               </div>
               {/* Footer with title */}
-              <div className="bg-blue-50 border-t border-blue-100 px-7 py-3 flex itemrekas-center rounded-b-2xl">
+              <div className="bg-blue-50 border-t border-blue-100 px-7 py-3 flex items-center rounded-b-2xl">
                 <span className="text-base font-semibold text-blue-700 truncate">
                   {doc.title || "Untitled Document"}
                 </span>
@@ -274,46 +274,48 @@ export default function Dashboard() {
                   </button>
                 </div>
               )}
-              {renameId === doc._id && (
-                <div
-                  className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50"
-                  onClick={() => setRenameId(null)}
-                >
-                  <form
-                    onClick={(e) => e.stopPropagation()}
-                    onSubmit={handleRenameSubmit}
-                    className="bg-white rounded-lg shadow-lg p-6 flex flex-col gap-4 w-80"
-                  >
-                    <h2 className="text-lg font-semibold text-blue-700">
-                      Rename Document
-                    </h2>
-                    <input
-                      type="text"
-                      value={renameTitle}
-                      onChange={(e) => setRenameTitle(e.target.value)}
-                      className="border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                      autoFocus
-                    />
-                    <div className="flex justify-end gap-2">
-                      <button
-                        type="button"
-                        className="px-4 py-1 rounded bg-gray-200 hover:bg-gray-300"
-                        onClick={() => setRenameId(null)}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-4 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </form>
-                </div>
-              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Rename Modal rendered ONCE outside the map */}
+      {renameId && (
+        <div
+          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50"
+          onClick={() => setRenameId(null)}
+        >
+          <form
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={handleRenameSubmit}
+            className="bg-white rounded-lg shadow-lg p-6 flex flex-col gap-4 w-80"
+          >
+            <h2 className="text-lg font-semibold text-blue-700">
+              Rename Document
+            </h2>
+            <input
+              type="text"
+              value={renameTitle}
+              onChange={(e) => setRenameTitle(e.target.value)}
+              className="border border-gray-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                className="px-4 py-1 rounded bg-gray-200 hover:bg-gray-300"
+                onClick={() => setRenameId(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1 rounded bg-blue-600 text-white hover:bg-blue-700"
+              >
+                Save
+              </button>
+            </div>
+          </form>
         </div>
       )}
 

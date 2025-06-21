@@ -114,6 +114,7 @@
 ### 1. Real-Time Collaboration with Yjs WebSocket Server
 - Set up a **dedicated Yjs WebSocket server** in a new `yjs-server/` folder for real-time collaborative editing.
 - Configured the frontend to use an environment variable (`VITE_WEBSOCKET_URL`) for the WebSocket server URL.
+- Implemented the functionality of inviting collaborators through email to contribute on a document.
 - Verified that multiple users can collaborate in real time with unique cursor colors and names.
 
 ### 2. Collaboration Cursor UI Improvements
