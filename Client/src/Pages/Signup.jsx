@@ -96,7 +96,7 @@ export default function Signup() {
   const handleLoginClick = () => {
     setAnimate(true);
     setTimeout(() => {
-      navigate("/login");
+      navigate("/");
     }, 400);
   };
 

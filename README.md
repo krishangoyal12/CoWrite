@@ -15,7 +15,7 @@
 - **Frontend:** React, TipTap, Tailwind CSS
 - **Backend:** Node.js, Express, MongoDB
 - **Collaboration:** Yjs + WebRTC or WebSocket provider
-- **AI Integration:** OpenAI API (GPT)
+- **AI Integration:** Google Gemini AI API
 - **Auth:** JWT-based authentication
 
 ## 📌 MVP Goals
@@ -134,6 +134,45 @@
 
 ---
 
+## ✅ Day 4 Progress
+
+### 1. AI Integration with Google Gemini
+- Integrated Google's Gemini AI API to power intelligent writing assistance features.
+- Created a custom Tiptap extension (`AIExtension`) to handle AI communication and responses.
+- Configured environment variables to securely store the Gemini API key.
+- Implemented error handling for AI requests with user-friendly notifications.
+
+### 2. AI-Powered Document Tools
+- **Summarize Document:** Generate concise summaries of document content.
+- **Bullet Summary:** Create bullet point summaries of the document.
+- **Improve Writing:** Enhance grammar, clarity, and overall writing quality.
+- **Format Document:** Automatically apply appropriate headings, lists, and structure.
+- **Professional Tone:** Convert content to a more formal, business-like tone.
+- **Grammar Check:** Find and fix grammatical and spelling errors.
+
+### 3. "Ask Document" Feature
+- Added capability to ask questions about document content and receive AI-generated answers.
+- Implemented an intuitive UI with a dedicated toolbar button and input dialog.
+- Added keyboard shortcuts (Enter to submit, Esc to cancel) for better UX.
+
+### 4. AI UI Components
+- **AI Dropdown Menu:** Created a scrollable dropdown with all AI features.
+- **Custom Prompt Support:** Added interface for users to write custom prompts.
+- **Loading Indicators:** Implemented loading states while waiting for AI responses.
+
+### 5. Output Formatting & Quality
+- Added robust processing of AI responses to ensure clean, properly formatted HTML content.
+- Removed markdown artifacts, code blocks, and excessive whitespace from AI responses.
+- Implemented defensive error handling to prevent editor state conflicts.
+
+### 6. UX Improvements
+- Added keyboard navigation for AI features.
+- Implemented auto-close behavior for dropdowns and modals.
+
+**End of Day 4**
+
+---
+
 ## 🚧 Work in Progress
 This project is actively being developed. Contributions and ideas are welcome!
 
@@ -141,4 +180,4 @@ This project is actively being developed. Contributions and ideas are welcome!
 **Netlify**:- https://krishan-cowrite.netlify.app  
 **Render**:- https://cowrite-x48q.onrender.com
 
-Stay tuned for updates, and feel free to fork, star ⭐, or contribute!
+Stay tuned for updates, and feel free to fork, star ⭐,

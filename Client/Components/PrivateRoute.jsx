@@ -24,5 +24,5 @@ export default function PrivateRoute({ children }) {
 
   if (auth === null) return <div>Loading...</div>;
   if (auth) return children;
-  return <Navigate to="/login" replace />;
+  return <Navigate to="/" replace />;
 }
