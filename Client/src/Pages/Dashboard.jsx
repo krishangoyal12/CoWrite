@@ -45,6 +45,8 @@ export default function Dashboard() {
     fetchDocuments();
   }, []);
 
+  useEffect(() => { const interval = setInterval(() => { window.location.reload(); }, 5000); return () => clearInterval(interval); }, []);
+
   useEffect(() => {
     function handleClickOutside(event) {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
