@@ -16,6 +16,7 @@ export default function Dashboard() {
   const { auth: user } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState(null);
   const [renameId, setRenameId] = useState(null);
   const [renameTitle, setRenameTitle] = useState("");
@@ -23,29 +24,49 @@ export default function Dashboard() {
   const menuRef = useRef(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    async function fetchDocuments() {
-      try {
-        const res = await fetch(`${baseURL}/api/documents`, {
-          method: "GET",
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (res.ok) {
-          setDocuments(data.data || []);
-        } else {
-          toast.error(data.message || "Failed to fetch documents");
-        }
-      } catch {
-        toast.error("Network error");
-      } finally {
-        setLoading(false);
+  // Extract fetchDocuments outside of useEffects so it can be reused
+  async function fetchDocuments(showErrors = true) {
+    try {
+      if (!loading) {
+        setRefreshing(true);
       }
+      
+      const res = await fetch(`${baseURL}/api/documents`, {
+        method: "GET",
+        credentials: "include",
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setDocuments(data.data || []);
+      } else if (showErrors) {
+        toast.error(data.message || "Failed to fetch documents");
+      } else {
+        console.error("Silent refresh failed:", data.message);
+      }
+    } catch (error) {
+      if (showErrors) {
+        toast.error("Network error");
+      } else {
+        console.error("Silent refresh network error:", error);
+      }
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
     }
-    fetchDocuments();
+  }
+
+  useEffect(() => {
+    fetchDocuments(true);
   }, []);
 
-  useEffect(() => { const interval = setInterval(() => { window.location.reload(); }, 5000); return () => clearInterval(interval); }, []);
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchDocuments(false);
+    }, 5000);
+    
+    return () => clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event) {
@@ -165,7 +186,18 @@ export default function Dashboard() {
 
   return (
     <div className="max-w-5xl mx-auto py-8 px-4 relative">
-      <h1 className="text-3xl font-bold mb-6 text-blue-700">Your Documents</h1>
+      <h1 className="text-3xl font-bold mb-6 text-blue-700 flex items-center">
+        Your Documents
+        {refreshing && (
+          <span className="ml-3 text-sm font-normal text-blue-500 flex items-center">
+            <svg className="animate-spin h-4 w-4 mr-1" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+            Syncing...
+          </span>
+        )}
+      </h1>
       {documents.length === 0 ? (
         <div className="text-gray-500 text-center mt-12">
           Nothing to show, create your first document!

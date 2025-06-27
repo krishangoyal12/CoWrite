@@ -97,18 +97,15 @@
   display: none !important;
 }
 
-/* Hide the colored selection bar */
 .collaboration-cursor__selection {
   background: transparent !important;
   border: none !important;
 }
 
-/* Hide the label when it's rendered as a bar (selection), but keep it for the caret */
 .collaboration-cursor__selection + .collaboration-cursor__label {
   display: none !important;
 }
 
-/* Optional: Remove any padding/margin for the label when it's above the caret */
 .collaboration-cursor__caret + .collaboration-cursor__label {
   margin-top: -28px !important; /* adjust as needed */
   margin-left: 0 !important;
@@ -116,4 +113,20 @@
   border-radius: 6px !important;
   font-size: 0.85em !important;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.comment-mark {
+  background-color: rgba(255, 230, 0, 0.3);
+  cursor: pointer;
+  border-bottom: 2px solid #ffd700;
+  padding: 0 1px;
+}
+
+.comment-mark:hover {
+  background-color: rgba(255, 230, 0, 0.5);
+}
+
+.comment-mark.selected {
+  background-color: rgba(255, 230, 0, 0.6);
+  border-bottom: 2px solid #ff9900;
 }

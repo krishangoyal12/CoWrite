@@ -12,7 +12,7 @@ import { AIBubbleMenu } from "../../Components/AIBubbleMenu";
 import { AIDropdownMenu } from "../../Components/AIDropdownMenu";
 import toast from "react-hot-toast";
 import { FiBold, FiItalic, FiRotateCcw, FiRotateCw } from "react-icons/fi";
-import { LuSparkles, LuCircleHelp } from 'react-icons/lu';
+import { LuSparkles, LuCircleHelp } from "react-icons/lu";
 import { MdColorize } from "react-icons/md";
 import { MdFormatStrikethrough, MdFormatUnderlined } from "react-icons/md";
 import { BiHeading } from "react-icons/bi";
@@ -27,11 +27,25 @@ import { WebsocketProvider } from "y-websocket";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { useAuth } from "../../Context/useAuth";
+import { CommentExtension } from "../Extensions/CommentExtension";
+import { CommentPanel, CommentBubble } from "../../Components/CommentPanel";
 
 const COLOR_GRID = [
-  "#000000", "#434343", "#666666", "#999999", "#cccccc", "#ffffff",
-  "#ff0000", "#ff9900", "#ffff00", "#00ff00", "#00ffff", "#0000ff",
-  "#9900ff", "#ff00ff", "#ff99cc",
+  "#000000",
+  "#434343",
+  "#666666",
+  "#999999",
+  "#cccccc",
+  "#ffffff",
+  "#ff0000",
+  "#ff9900",
+  "#ffff00",
+  "#00ff00",
+  "#00ffff",
+  "#0000ff",
+  "#9900ff",
+  "#ff00ff",
+  "#ff99cc",
 ];
 
 function ColorIcon({ color }) {
@@ -40,8 +54,12 @@ function ColorIcon({ color }) {
       <span style={{ fontWeight: "bold", fontSize: 18, lineHeight: 1 }}>A</span>
       <span
         style={{
-          display: "block", height: 3, width: 18, background: color,
-          borderRadius: 2, margin: "2px auto 0 auto",
+          display: "block",
+          height: 3,
+          width: 18,
+          background: color,
+          borderRadius: 2,
+          margin: "2px auto 0 auto",
         }}
       />
     </span>
@@ -64,10 +82,16 @@ const FONT_FAMILIES = [
   { label: "Monospace", value: "monospace" },
   { label: "Montserrat", value: "Montserrat, sans-serif" },
   { label: "Open Sans", value: "'Open Sans', sans-serif" },
-  { label: "Palatino", value: "'Palatino Linotype', 'Book Antiqua', Palatino, serif" },
+  {
+    label: "Palatino",
+    value: "'Palatino Linotype', 'Book Antiqua', Palatino, serif",
+  },
   { label: "Roboto", value: "Roboto, sans-serif" },
   { label: "Sans-serif", value: "sans-serif" },
-  { label: "Segoe UI", value: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif" },
+  {
+    label: "Segoe UI",
+    value: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+  },
   { label: "Serif", value: "serif" },
   { label: "Source Sans Pro", value: "'Source Sans Pro', sans-serif" },
   { label: "System UI", value: "system-ui, sans-serif" },
@@ -78,8 +102,16 @@ const FONT_FAMILIES = [
 ];
 
 const COLLAB_COLORS = [
-  "#007bff", "#e83e8c", "#fd7e14", "#28a745", "#20c997",
-  "#6f42c1", "#17a2b8", "#ffc107", "#dc3545", "#343a40",
+  "#007bff",
+  "#e83e8c",
+  "#fd7e14",
+  "#28a745",
+  "#20c997",
+  "#6f42c1",
+  "#17a2b8",
+  "#ffc107",
+  "#dc3545",
+  "#343a40",
 ];
 
 function getUserColor(userIdOrEmail) {
@@ -120,11 +152,15 @@ export default function Editor() {
     () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc),
     [id, ydoc]
   );
+  const [showComments, setShowComments] = useState(false);
 
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ history: false }),
-      TextStyle, FontStyle, Underline, Color,
+      TextStyle,
+      FontStyle,
+      Underline,
+      Color,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Collaboration.configure({ document: ydoc }),
       CollaborationCursor.configure({
@@ -135,6 +171,7 @@ export default function Editor() {
         },
       }),
       AIExtension.configure({ apiKey: import.meta.env.VITE_GEMINI_API_KEY }),
+      CommentExtension,
     ],
     autofocus: true,
     editable: !loading,
@@ -155,7 +192,9 @@ export default function Editor() {
 
   const fetchCollaborators = async () => {
     try {
-      const res = await fetch(`${baseURL}/api/documents/${id}`, { credentials: "include" });
+      const res = await fetch(`${baseURL}/api/documents/${id}`, {
+        credentials: "include",
+      });
       const data = await res.json();
       if (res.ok && data.data?.collaborators) {
         setCollaborators(data.data.collaborators);
@@ -204,7 +243,9 @@ export default function Editor() {
         return;
       }
       try {
-        const res = await fetch(`${baseURL}/api/documents/${id}`, { credentials: "include" });
+        const res = await fetch(`${baseURL}/api/documents/${id}`, {
+          credentials: "include",
+        });
         const data = await res.json();
         if (!res.ok) throw new Error();
         const title = data.data?.title || "Untitled Document";
@@ -263,13 +304,21 @@ export default function Editor() {
   const handleFontSizeChange = (e) => {
     const value = e.target.value;
     setFontSize(value);
-    editor.chain().focus().setMark("fontStyle", { fontSize: value, fontFamily }).run();
+    editor
+      .chain()
+      .focus()
+      .setMark("fontStyle", { fontSize: value, fontFamily })
+      .run();
   };
 
   const handleFontFamilyChange = (e) => {
     const value = e.target.value;
     setFontFamily(value);
-    editor.chain().focus().setMark("fontStyle", { fontFamily: value, fontSize }).run();
+    editor
+      .chain()
+      .focus()
+      .setMark("fontStyle", { fontFamily: value, fontSize })
+      .run();
   };
 
   const handleColorSelect = (color) => {
@@ -317,7 +366,10 @@ export default function Editor() {
   useEffect(() => {
     if (!showAskDocInput) return;
     const handleClick = (e) => {
-      if (askDocInputRef.current && !askDocInputRef.current.contains(e.target)) {
+      if (
+        askDocInputRef.current &&
+        !askDocInputRef.current.contains(e.target)
+      ) {
         setShowAskDocInput(false);
       }
     };
@@ -327,9 +379,12 @@ export default function Editor() {
 
   const handleAskDoc = () => {
     if (!askDocPrompt.trim()) return;
-    editor.commands.generateText({ task: 'ask_document', prompt: askDocPrompt });
+    editor.commands.generateText({
+      task: "ask_document",
+      prompt: askDocPrompt,
+    });
     setShowAskDocInput(false);
-    setAskDocPrompt('');
+    setAskDocPrompt("");
   };
 
   if (loading || !editor) {
@@ -360,9 +415,14 @@ export default function Editor() {
         </button>
         <div className="ml-6 text-sm text-gray-700">
           <span className="font-semibold">Collaborators:</span>
-          {collaborators.length === 0 && <span className="ml-2 text-gray-400">None</span>}
+          {collaborators.length === 0 && (
+            <span className="ml-2 text-gray-400">None</span>
+          )}
           {collaborators.map((c) => (
-            <span key={typeof c === "object" && c._id ? c._id : c} className="ml-2 bg-gray-200 px-2 py-0.5 rounded">
+            <span
+              key={typeof c === "object" && c._id ? c._id : c}
+              className="ml-2 bg-gray-200 px-2 py-0.5 rounded"
+            >
               {typeof c === "object" ? c.email || c.username || c._id : c}
             </span>
           ))}
@@ -372,55 +432,89 @@ export default function Editor() {
       <div className="flex items-center bg-white px-8 py-3 shadow h-16 border-b border-gray-200">
         <div className="flex items-center gap-3 select-none">
           <img src="/logo.png" alt="CoWrite Logo" className="w-10 h-10" />
-          <span className="text-2xl font-extrabold text-blue-700 tracking-wide">CoWrite</span>
+          <span className="text-2xl font-extrabold text-blue-700 tracking-wide">
+            CoWrite
+          </span>
         </div>
         <div className="ml-8 flex-1">
           {user?.id === docOwnerId ? (
             <input
-              type="text" value={docTitle} onChange={(e) => setDocTitle(e.target.value)}
+              type="text"
+              value={docTitle}
+              onChange={(e) => setDocTitle(e.target.value)}
               className="bg-transparent text-xl font-semibold text-gray-800 border-b border-gray-200 focus:border-blue-500 outline-none px-2 py-1 w-full max-w-lg"
               placeholder="Document Title"
             />
           ) : (
             <input
-              type="text" value={docTitle} disabled
+              type="text"
+              value={docTitle}
+              disabled
               className="bg-transparent text-xl font-semibold text-gray-800 border-b border-gray-200 px-2 py-1 w-full max-w-lg opacity-70 cursor-not-allowed"
-              readOnly tabIndex={-1} aria-label="Document Title (read only)"
+              readOnly
+              tabIndex={-1}
+              aria-label="Document Title (read only)"
             />
           )}
         </div>
-        <button onClick={handleSave} className="ml-4 bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 transition">
+        <button
+          onClick={handleSave}
+          className="ml-4 bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 transition"
+        >
           Save
         </button>
       </div>
 
       <div className="flex gap-2 items-center bg-gray-50 px-8 py-2 shadow-sm border-b border-gray-100 relative">
-        <button onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().chain().focus().undo().run()} className="p-2 rounded transition text-xl flex items-center justify-center bg-white text-gray-700 hover:bg-blue-50" title="Undo">
+        <button
+          onClick={() => editor.chain().focus().undo().run()}
+          disabled={!editor.can().chain().focus().undo().run()}
+          className="p-2 rounded transition text-xl flex items-center justify-center bg-white text-gray-700 hover:bg-blue-50"
+          title="Undo"
+        >
           <FiRotateCcw />
         </button>
-        <button onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().chain().focus().redo().run()} className="p-2 rounded transition text-xl flex items-center justify-center bg-white text-gray-700 hover:bg-blue-50" title="Redo">
+        <button
+          onClick={() => editor.chain().focus().redo().run()}
+          disabled={!editor.can().chain().focus().redo().run()}
+          className="p-2 rounded transition text-xl flex items-center justify-center bg-white text-gray-700 hover:bg-blue-50"
+          title="Redo"
+        >
           <FiRotateCw />
         </button>
-        
+
         <span className="mx-2 border-l border-gray-300 h-6" />
 
         <div className="relative" ref={aiMenuRef}>
           <button
-            onClick={() => setShowAiMenu(v => !v)}
-            className={`p-2 rounded transition text-xl flex items-center justify-center gap-1.5 ${showAiMenu ? 'bg-blue-100 text-blue-700' : 'bg-white text-gray-700 hover:bg-blue-50'}`}
+            onClick={() => setShowAiMenu((v) => !v)}
+            className={`p-2 rounded transition text-xl flex items-center justify-center gap-1.5 ${
+              showAiMenu
+                ? "bg-blue-100 text-blue-700"
+                : "bg-white text-gray-700 hover:bg-blue-50"
+            }`}
             title="AI Tools"
           >
             <LuSparkles />
             <span className="text-sm font-medium pr-1">AI Tools</span>
           </button>
-          {showAiMenu && <AIDropdownMenu editor={editor} closeMenu={() => setShowAiMenu(false)} />}
+          {showAiMenu && (
+            <AIDropdownMenu
+              editor={editor}
+              closeMenu={() => setShowAiMenu(false)}
+            />
+          )}
         </div>
 
         <span className="mx-2 border-l border-gray-300 h-6" />
 
         <label className="flex items-center gap-1">
           <BiHeading className="text-xl text-gray-500" />
-          <select value={headingLevel} onChange={handleHeadingChange} className="bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none">
+          <select
+            value={headingLevel}
+            onChange={handleHeadingChange}
+            className="bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none"
+          >
             <option value="paragraph">Normal</option>
             <option value="heading1">Heading 1</option>
             <option value="heading2">Heading 2</option>
@@ -430,29 +524,74 @@ export default function Editor() {
             <option value="heading6">Heading 6</option>
           </select>
         </label>
-        <select value={fontSize} onChange={handleFontSizeChange} className="bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none ml-2" style={{ width: 70 }}>
-          <option value="12px">12</option> <option value="14px">14</option> <option value="16px">16</option>
-          <option value="18px">18</option> <option value="20px">20</option> <option value="24px">24</option>
+        <select
+          value={fontSize}
+          onChange={handleFontSizeChange}
+          className="bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none ml-2"
+          style={{ width: 70 }}
+        >
+          <option value="12px">12</option> <option value="14px">14</option>{" "}
+          <option value="16px">16</option>
+          <option value="18px">18</option> <option value="20px">20</option>{" "}
+          <option value="24px">24</option>
           <option value="28px">28</option> <option value="32px">32</option>
         </select>
-        <select value={fontFamily} onChange={handleFontFamilyChange} className="bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none ml-2" style={{ width: 140 }}>
-          {FONT_FAMILIES.map((f) => (<option key={f.value} value={f.value} style={{ fontFamily: f.value }}>{f.label}</option>))}
+        <select
+          value={fontFamily}
+          onChange={handleFontFamilyChange}
+          className="bg-white border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none ml-2"
+          style={{ width: 140 }}
+        >
+          {FONT_FAMILIES.map((f) => (
+            <option
+              key={f.value}
+              value={f.value}
+              style={{ fontFamily: f.value }}
+            >
+              {f.label}
+            </option>
+          ))}
         </select>
         <div className="relative ml-2">
-          <button type="button" className={`p-2 rounded transition text-xl flex items-center justify-center bg-white text-gray-700 hover:bg-blue-50`} title="Text Color" onClick={() => setShowColorPicker((v) => !v)} style={{ minWidth: 28 }}>
+          <button
+            type="button"
+            className={`p-2 rounded transition text-xl flex items-center justify-center bg-white text-gray-700 hover:bg-blue-50`}
+            title="Text Color"
+            onClick={() => setShowColorPicker((v) => !v)}
+            style={{ minWidth: 28 }}
+          >
             <ColorIcon color={textColor} />
           </button>
           {showColorPicker && (
             <div className="color-picker-popover absolute z-50 mt-2 left-0 bg-white border border-gray-200 rounded-lg shadow-xl p-4 min-w-[140px]">
               <div className="grid grid-cols-5 gap-3 mb-3">
                 {COLOR_GRID.map((color) => (
-                  <button key={color} type="button" className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition ${color.toLowerCase() === textColor.toLowerCase() ? "border-blue-600 ring-2 ring-blue-200" : "border-gray-200 hover:border-blue-400"}`} style={{ background: color }} onClick={() => handleColorSelect(color)} />
+                  <button
+                    key={color}
+                    type="button"
+                    className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition ${
+                      color.toLowerCase() === textColor.toLowerCase()
+                        ? "border-blue-600 ring-2 ring-blue-200"
+                        : "border-gray-200 hover:border-blue-400"
+                    }`}
+                    style={{ background: color }}
+                    onClick={() => handleColorSelect(color)}
+                  />
                 ))}
               </div>
               <div className="flex items-center gap-2 mt-2 pt-2 border-t border-gray-100">
                 <label className="relative">
-                  <input type="color" value={customColor} onChange={handleCustomColor} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" title="Custom Color" />
-                  <span className="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center" style={{ background: customColor }}>
+                  <input
+                    type="color"
+                    value={customColor}
+                    onChange={handleCustomColor}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    title="Custom Color"
+                  />
+                  <span
+                    className="w-8 h-8 rounded-full border-2 border-gray-300 flex items-center justify-center"
+                    style={{ background: customColor }}
+                  >
                     <MdColorize className="text-xl text-gray-700" />
                   </span>
                 </label>
@@ -461,50 +600,121 @@ export default function Editor() {
           )}
         </div>
         <span className="mx-2 border-l border-gray-300 h-6" />
-        <button onClick={() => editor.chain().focus().setTextAlign("left").run()} className={`p-2 rounded transition text-xl flex items-center justify-center ${editor.isActive({ textAlign: "left" }) ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-blue-50"}`} title="Align Left">
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("left").run()}
+          className={`p-2 rounded transition text-xl flex items-center justify-center ${
+            editor.isActive({ textAlign: "left" })
+              ? "bg-blue-600 text-white"
+              : "bg-white text-gray-700 hover:bg-blue-50"
+          }`}
+          title="Align Left"
+        >
           <MdFormatAlignLeft />
         </button>
-        <button onClick={() => editor.chain().focus().setTextAlign("center").run()} className={`p-2 rounded transition text-xl flex items-center justify-center ${editor.isActive({ textAlign: "center" }) ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-blue-50"}`} title="Align Center">
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("center").run()}
+          className={`p-2 rounded transition text-xl flex items-center justify-center ${
+            editor.isActive({ textAlign: "center" })
+              ? "bg-blue-600 text-white"
+              : "bg-white text-gray-700 hover:bg-blue-50"
+          }`}
+          title="Align Center"
+        >
           <MdFormatAlignCenter />
         </button>
-        <button onClick={() => editor.chain().focus().setTextAlign("right").run()} className={`p-2 rounded transition text-xl flex items-center justify-center ${editor.isActive({ textAlign: "right" }) ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-blue-50"}`} title="Align Right">
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("right").run()}
+          className={`p-2 rounded transition text-xl flex items-center justify-center ${
+            editor.isActive({ textAlign: "right" })
+              ? "bg-blue-600 text-white"
+              : "bg-white text-gray-700 hover:bg-blue-50"
+          }`}
+          title="Align Right"
+        >
           <MdFormatAlignRight />
         </button>
-        <button onClick={() => editor.chain().focus().setTextAlign("justify").run()} className={`p-2 rounded transition text-xl flex items-center justify-center ${editor.isActive({ textAlign: "justify" }) ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-blue-50"}`} title="Justify">
+        <button
+          onClick={() => editor.chain().focus().setTextAlign("justify").run()}
+          className={`p-2 rounded transition text-xl flex items-center justify-center ${
+            editor.isActive({ textAlign: "justify" })
+              ? "bg-blue-600 text-white"
+              : "bg-white text-gray-700 hover:bg-blue-50"
+          }`}
+          title="Justify"
+        >
           <MdFormatAlignJustify />
         </button>
         <span className="mx-2 border-l border-gray-300 h-6" />
-        <button onClick={() => editor.chain().focus().toggleBold().run()} disabled={!editor.can().chain().focus().toggleBold().run()} className={`p-2 rounded transition text-xl flex items-center justify-center ${editor.isActive("bold") ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-blue-50"}`} title="Bold">
+        <button
+          onClick={() => editor.chain().focus().toggleBold().run()}
+          disabled={!editor.can().chain().focus().toggleBold().run()}
+          className={`p-2 rounded transition text-xl flex items-center justify-center ${
+            editor.isActive("bold")
+              ? "bg-blue-600 text-white"
+              : "bg-white text-gray-700 hover:bg-blue-50"
+          }`}
+          title="Bold"
+        >
           <FiBold />
         </button>
-        <button onClick={() => editor.chain().focus().toggleItalic().run()} disabled={!editor.can().chain().focus().toggleItalic().run()} className={`p-2 rounded transition text-xl flex items-center justify-center ${editor.isActive("italic") ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-blue-50"}`} title="Italic">
+        <button
+          onClick={() => editor.chain().focus().toggleItalic().run()}
+          disabled={!editor.can().chain().focus().toggleItalic().run()}
+          className={`p-2 rounded transition text-xl flex items-center justify-center ${
+            editor.isActive("italic")
+              ? "bg-blue-600 text-white"
+              : "bg-white text-gray-700 hover:bg-blue-50"
+          }`}
+          title="Italic"
+        >
           <FiItalic />
         </button>
-        <button onClick={() => editor.chain().focus().toggleStrike().run()} disabled={!editor.can().chain().focus().toggleStrike().run()} className={`p-2 rounded transition text-xl flex items-center justify-center ${editor.isActive("strike") ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-blue-50"}`} title="Strikethrough">
+        <button
+          onClick={() => editor.chain().focus().toggleStrike().run()}
+          disabled={!editor.can().chain().focus().toggleStrike().run()}
+          className={`p-2 rounded transition text-xl flex items-center justify-center ${
+            editor.isActive("strike")
+              ? "bg-blue-600 text-white"
+              : "bg-white text-gray-700 hover:bg-blue-50"
+          }`}
+          title="Strikethrough"
+        >
           <MdFormatStrikethrough />
         </button>
-        <button onClick={() => editor.chain().focus().toggleUnderline().run()} disabled={!editor.can().chain().focus().toggleUnderline().run()} className={`p-2 rounded transition text-xl flex items-center justify-center ${editor.isActive("underline") ? "bg-blue-600 text-white" : "bg-white text-gray-700 hover:bg-blue-50"}`} title="Underline">
+        <button
+          onClick={() => editor.chain().focus().toggleUnderline().run()}
+          disabled={!editor.can().chain().focus().toggleUnderline().run()}
+          className={`p-2 rounded transition text-xl flex items-center justify-center ${
+            editor.isActive("underline")
+              ? "bg-blue-600 text-white"
+              : "bg-white text-gray-700 hover:bg-blue-50"
+          }`}
+          title="Underline"
+        >
           <MdFormatUnderlined />
         </button>
         <button
-          onClick={() => setShowAskDocInput(v => !v)}
+          onClick={() => setShowAskDocInput((v) => !v)}
           className="p-2 rounded transition text-xl flex items-center justify-center bg-white text-gray-700 hover:bg-blue-50"
           title="Ask Document"
         >
           <LuCircleHelp />
         </button>
         {showAskDocInput && (
-          <div className="absolute left-1/2 transform -translate-x-1/2 mt-16 bg-white border rounded shadow p-2 z-50 flex flex-col gap-2" style={{ minWidth: 320 }}>
+          <div
+            className="absolute left-1/2 transform -translate-x-1/2 mt-16 bg-white border rounded shadow p-2 z-50 flex flex-col gap-2"
+            style={{ minWidth: 320 }}
+          >
             <input
               ref={askDocInputRef}
               type="text"
               className="border rounded px-2 py-1 text-sm w-full"
               placeholder="Ask a question about this document..."
               value={askDocPrompt}
-              onChange={e => setAskDocPrompt(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter') handleAskDoc();
-                if (e.key === 'Escape') setShowAskDocInput(false);
+              onChange={(e) => setAskDocPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAskDoc();
+                if (e.key === "Escape") setShowAskDocInput(false);
               }}
               autoFocus
             />
@@ -523,15 +733,38 @@ export default function Editor() {
                 Cancel
               </button>
             </div>
-            <span className="text-xs text-gray-400">Press <b>Enter</b> to ask, <b>Esc</b> to cancel.</span>
+            <span className="text-xs text-gray-400">
+              Press <b>Enter</b> to ask, <b>Esc</b> to cancel.
+            </span>
+            <button
+              onClick={() => setShowComments(!showComments)}
+              className={`p-2 rounded transition text-xl flex items-center justify-center ${
+                showComments
+                  ? "bg-blue-600 text-white"
+                  : "bg-white text-gray-700 hover:bg-blue-50"
+              }`}
+              title="Comments"
+            >
+              <FiMessageSquare />
+            </button>
           </div>
         )}
       </div>
 
       <div className="flex-1 justify-center py-8 bg-gray-100 overflow-y-auto">
-        <div className="bg-white rounded-lg shadow-md w-full max-w-4xl px-16 py-10 mx-auto" style={{ minHeight: "80vh" }}>
-          <EditorContent editor={editor} className="prose max-w-none text-left tiptap-editor" />
-          {editor && <AIBubbleMenu editor={editor} />}
+        <div className="flex">
+          <div
+            className="bg-white rounded-lg shadow-md w-full max-w-4xl px-16 py-10 mx-auto relative"
+            style={{ minHeight: "80vh" }}
+          >
+            <EditorContent
+              editor={editor}
+              className="prose max-w-none text-left tiptap-editor"
+            />
+            {editor && <AIBubbleMenu editor={editor} />}
+            {editor && <CommentBubble editor={editor} />}
+          </div>
+          {showComments && editor && <CommentPanel editor={editor} />}
         </div>
       </div>
     </div>
