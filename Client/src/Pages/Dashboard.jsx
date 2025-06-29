@@ -48,7 +48,7 @@ export default function Dashboard() {
       if (showErrors) {
         toast.error("Network error");
       } else {
-        console.error("Silent refresh network error:", error);
+        console.error("Silent refresh network error:", error); 
       }
     } finally {
       setLoading(false);
