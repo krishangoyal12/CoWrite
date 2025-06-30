@@ -84,7 +84,7 @@ export default function Dashboard() {
     try {
       const res = await fetch(`${baseURL}/api/documents/${deleteId}`, {
         method: "DELETE",
-        credentials: "include",
+        credentials: "include" ,
       });
       const data = await res.json();
       if (res.ok) {
