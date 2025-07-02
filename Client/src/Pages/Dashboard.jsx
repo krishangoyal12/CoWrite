@@ -52,7 +52,7 @@ export default function Dashboard() {
       }
     } finally {
       setLoading(false);
-      setRefreshing(false);
+      setRefreshing(false); 
     }
   }
 

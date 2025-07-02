@@ -8,7 +8,7 @@ export const CommentExtension = Extension.create({
   addOptions() {
     return {
       HTMLAttributes: {
-        class: 'comment-mark',
+        class: 'comment-mark', 
       },
     };
   },
