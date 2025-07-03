@@ -3,14 +3,14 @@ const WebSocket = require('ws');
 const Y = require('yjs');
 
 const port = process.env.PORT || 1234;
-const host = '0.0.0.0';
+const host = '0.0.0.0'
 
 // Map to store active connections and their documents
 const docs = new Map();
 
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Yjs WebSocket server is running');
+  res.end('Yjs WebSocket is running');
 });
 
 const wss = new WebSocket.Server({ server });
