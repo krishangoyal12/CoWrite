@@ -1,24 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 import toast from "react-hot-toast";
 import { Navigate } from "react-router-dom";
-
-const baseURL = import.meta.env.VITE_URL;
+import { useAuth } from "../Context/useAuth";
 
 export default function PrivateRoute({ children }) {
-  const [auth, setAuth] = useState(null);
-
-  useEffect(() => {
-    fetch(`${baseURL}/api/auth/me`, {
-      method: "GET",
-      credentials: "include",
-    })
-      .then((res) => setAuth(res.ok))
-      .catch(() => setAuth(false));
-  }, []);
+  const { auth } = useAuth();
 
   useEffect(() => {
     if (auth === false) {
-      toast("You should be logged in access dashbaord", { icon: "⚠️" });
+      toast("You should be logged in to access dashboard", { icon: "⚠️" });
     }
   }, [auth]);
 
