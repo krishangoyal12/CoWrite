@@ -30,7 +30,6 @@ export default function Dashboard() {
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
-    console.log(`[authFetch] URL: ${url}, Token exists: ${!!token}`, headers);
     return fetch(url, { ...options, headers });
   };
 

@@ -109,7 +109,7 @@ const getDocumentById = async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id)
       .populate("owner", "name email")
-      .populate("collaborators", "email username");
+      .populate("collaborators", "name email");
 
     if (!doc) {
       return res.status(404).json({ message: 'Document not found', success: false });

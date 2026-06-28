@@ -9,6 +9,12 @@ import Color from "@tiptap/extension-color";
 import FontStyle from "../Extensions/FontStyle";
 import toast from "react-hot-toast";
 import html2pdf from "html2pdf.js";
+import * as Y from "yjs";
+import { WebsocketProvider } from "y-websocket";
+import Collaboration from "@tiptap/extension-collaboration";
+import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+import { AiHighlight } from "../Extensions/AiHighlight";
+import { CommentExtension } from "../Extensions/CommentExtension";
 
 const baseURL = import.meta.env.VITE_URL;
 
@@ -19,6 +25,18 @@ export default function PublicEditor() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
 
+  const [ydoc] = useState(() => new Y.Doc());
+  const [provider] = useState(
+    () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc)
+  );
+
+  useEffect(() => {
+    return () => {
+      provider.destroy();
+      ydoc.destroy();
+    };
+  }, [provider, ydoc]);
+
   const editor = useEditor({
     extensions: [
       StarterKit.configure({ history: false }),
@@ -27,14 +45,22 @@ export default function PublicEditor() {
       Underline,
       Color,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
+      Collaboration.configure({ document: ydoc }),
+      CollaborationCursor.configure({
+        provider,
+        user: {
+          name: "Guest Viewer",
+          color: "#9ca3af",
+        },
+      }),
+      AiHighlight,
+      CommentExtension,
     ],
     editable: false,
-    content: "<p></p>"
   });
 
   useEffect(() => {
-    if (!editor) return;
-    const loadDocument = async () => {
+    const checkPublicAccess = async () => {
       try {
         const res = await fetch(`${baseURL}/api/documents/public/${id}`);
         const data = await res.json();
@@ -42,8 +68,6 @@ export default function PublicEditor() {
         
         const title = data.data?.title || "Untitled Document";
         setDocTitle(title);
-        
-        editor.commands.setContent(data.data?.content || "<p></p>");
         setLoading(false);
       } catch (err) {
         setErrorMsg(err.message);
@@ -51,8 +75,8 @@ export default function PublicEditor() {
         setLoading(false);
       }
     };
-    loadDocument();
-  }, [id, editor]);
+    checkPublicAccess();
+  }, [id]);
 
   const handleDownloadPDF = () => {
     const element = document.createElement("div");
@@ -125,7 +149,7 @@ export default function PublicEditor() {
         <div className="text-lg font-bold text-gray-800 text-center flex-1">
           {docTitle}
         </div>
-
+ 
         <button
           onClick={handleDownloadPDF}
           className="bg-gray-100 text-gray-700 px-5 py-2 rounded hover:bg-gray-200 transition font-medium flex items-center gap-2 border border-gray-200 shadow-sm"
