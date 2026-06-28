@@ -7,9 +7,16 @@ export function AuthProvider({ children }) {
   const baseURL = import.meta.env.VITE_URL;
 
   useEffect(() => {
+    const token = localStorage.getItem("token");
+    const headers = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
     fetch(`${baseURL}/api/auth/me`, {
       method: "GET",
       credentials: "include",
+      headers,
     })
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));

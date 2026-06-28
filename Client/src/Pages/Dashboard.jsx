@@ -24,6 +24,15 @@ export default function Dashboard() {
   const menuRef = useRef(null);
   const navigate = useNavigate();
 
+  const authFetch = (url, options = {}) => {
+    const token = localStorage.getItem("token");
+    const headers = { ...options.headers };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    return fetch(url, { ...options, headers });
+  };
+
   // Extract fetchDocuments outside of useEffects so it can be reused
   async function fetchDocuments(showErrors = true) {
     try {
@@ -31,7 +40,7 @@ export default function Dashboard() {
         setRefreshing(true);
       }
       
-      const res = await fetch(`${baseURL}/api/documents`, {
+      const res = await authFetch(`${baseURL}/api/documents`, {
         method: "GET",
         credentials: "include",
       });
@@ -94,13 +103,13 @@ export default function Dashboard() {
       let res;
       if (isOwner) {
         // Owner: permanently delete the document
-        res = await fetch(`${baseURL}/api/documents/${deleteId}`, {
+        res = await authFetch(`${baseURL}/api/documents/${deleteId}`, {
           method: "DELETE",
           credentials: "include",
         });
       } else {
         // Collaborator: remove self from the collaborators list
-        res = await fetch(`${baseURL}/api/documents/${deleteId}/leave`, {
+        res = await authFetch(`${baseURL}/api/documents/${deleteId}/leave`, {
           method: "DELETE",
           credentials: "include",
         });
@@ -129,7 +138,7 @@ export default function Dashboard() {
   const handleRenameSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await fetch(`${baseURL}/api/documents/${renameId}`, {
+      const res = await authFetch(`${baseURL}/api/documents/${renameId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
@@ -156,7 +165,7 @@ export default function Dashboard() {
   // Create new document and navigate to its editor
   const handleCreateNewDocument = async () => {
     try {
-      const res = await fetch(`${baseURL}/api/documents`, {
+      const res = await authFetch(`${baseURL}/api/documents`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },

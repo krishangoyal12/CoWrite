@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { GoogleLogin } from "@react-oauth/google";
 import { jwtDecode } from "jwt-decode";
 import { useAuth } from "../../Context/useAuth";
+import { FiEye, FiEyeOff } from "react-icons/fi";
 
 const baseURL = import.meta.env.VITE_URL;
 
@@ -11,6 +12,7 @@ export default function Login() {
   const { setAuth } = useAuth();
   const [form, setForm] = useState({ email: "", password: "" });
   const [animate, setAnimate] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -47,6 +49,7 @@ export default function Login() {
       });
       const data = await res.json();
       if (res.ok) {
+        if (data.token) localStorage.setItem("token", data.token);
         setAuth(data.user);
         toast.success("Login successful!");
         setForm({ email: "", password: "" });
@@ -74,6 +77,7 @@ export default function Login() {
       });
       const data = await res.json();
       if (res.ok) {
+        if (data.token) localStorage.setItem("token", data.token);
         setAuth(data.user);
         toast.success("Google login successful!");
         navigate("/dashboard");
@@ -134,14 +138,23 @@ export default function Login() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Password
             </label>
-            <input
-              type="password"
-              name="password"
-              placeholder="Password"
-              value={form.password}
-              onChange={handleChange}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="Password"
+                value={form.password}
+                onChange={handleChange}
+                className="w-full px-3 py-2 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 transition"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-500 hover:text-gray-700 focus:outline-none"
+              >
+                {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+              </button>
+            </div>
           </div>
           <button
             type="submit"

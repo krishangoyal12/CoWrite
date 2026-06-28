@@ -4,6 +4,7 @@ import toast from "react-hot-toast";
 import { GoogleLogin } from "@react-oauth/google";
 import { jwtDecode } from "jwt-decode";
 import { useAuth } from "../../Context/useAuth";
+import { FiEye, FiEyeOff } from "react-icons/fi";
 
 const baseURL = import.meta.env.VITE_URL;
 
@@ -11,6 +12,7 @@ export default function Signup() {
   const { setAuth } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", password: "" });
   const [animate, setAnimate] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
 
   const handleChange = (e) => {
@@ -55,6 +57,7 @@ export default function Signup() {
       });
       const data = await res.json();
       if (res.ok) {
+        if (data.token) localStorage.setItem("token", data.token);
         setAuth(data.user);
         toast.success("Signup successful!");
         setForm({ name: "", email: "", password: "" });
@@ -82,6 +85,7 @@ export default function Signup() {
       });
       const data = await res.json();
       if (res.ok) {
+        if (data.token) localStorage.setItem("token", data.token);
         setAuth(data.user);
         toast.success("Google signup successful!");
         navigate("/dashboard");
@@ -155,14 +159,23 @@ export default function Signup() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Password
             </label>
-            <input
-              type="password"
-              name="password"
-              placeholder="Password"
-              value={form.password}
-              onChange={handleChange}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-300 ease-in-out"
-            />
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                name="password"
+                placeholder="Password"
+                value={form.password}
+                onChange={handleChange}
+                className="w-full px-4 py-3 pr-12 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all duration-300 ease-in-out"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-500 hover:text-gray-700 focus:outline-none"
+              >
+                {showPassword ? <FiEyeOff size={20} /> : <FiEye size={20} />}
+              </button>
+            </div>
           </div>
           <br />
           <button

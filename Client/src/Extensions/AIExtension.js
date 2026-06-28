@@ -4,12 +4,16 @@ import toast from 'react-hot-toast';
 async function callGeminiAI(text, task, docHTML = "") {
   const url = `${import.meta.env.VITE_URL}/api/ai/generate`;
 
+  const token = localStorage.getItem("token");
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
   const response = await fetch(url, {
     method: 'POST',
     credentials: 'include',
-    headers: {
-      'Content-Type': 'application/json'
-    },
+    headers,
     body: JSON.stringify({
       text,
       task,

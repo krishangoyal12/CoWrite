@@ -3,6 +3,7 @@ const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const { OAuth2Client } = require('google-auth-library')
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID
+const isProduction = process.env.NODE_ENV === 'production' || process.env.RENDER === 'true';
 
 const signup = async (req, res) => {
     try {
@@ -37,8 +38,8 @@ const signup = async (req, res) => {
 
         res.cookie('token', jwtToken, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+            secure: isProduction,
+            sameSite: isProduction ? 'none' : 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000
         })
 
@@ -89,8 +90,8 @@ const googleSignup = async (req, res) => {
 
         res.cookie('token', jwtToken, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+            secure: isProduction,
+            sameSite: isProduction ? 'none' : 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000
         })
 
@@ -136,8 +137,8 @@ const login = async (req, res) => {
 
         res.cookie('token', jwtToken, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+            secure: isProduction,
+            sameSite: isProduction ? 'none' : 'strict',
             maxAge: 7 * 24 * 60 * 60 * 1000
         })
 
@@ -187,8 +188,8 @@ const logout = async (req, res) => {
     try {
         res.clearCookie('token', {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+            secure: isProduction,
+            sameSite: isProduction ? 'none' : 'strict',
         });
         return res.status(200).json({ message: "Logged out successfully" });
     } catch (error) {
