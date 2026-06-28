@@ -1,9 +1,11 @@
 const express = require('express')
 const app = express()
+app.set('trust proxy', 1); // Trust Render load balancer for secure cookies
 require('dotenv').config()
 const cors = require('cors');
+const allowedOrigin = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : "";
 app.use(cors({
-    origin: process.env.FRONTEND_URL,
+    origin: allowedOrigin,
     credentials: true
 }));
 const cookieParser = require('cookie-parser');

@@ -13,7 +13,7 @@ function stripHtml(html) {
 }
 
 export default function Dashboard() {
-  const { auth: user } = useAuth();
+  const { auth: user, setAuth } = useAuth();
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -39,10 +39,15 @@ export default function Dashboard() {
       
       if (res.ok) {
         setDocuments(data.data || []);
-      } else if (showErrors) {
-        toast.error(data.message || "Failed to fetch documents");
       } else {
-        console.error("Silent refresh failed:", data.message);
+        if (res.status === 401) {
+          setAuth(false);
+        }
+        if (showErrors) {
+          toast.error(data.message || "Failed to fetch documents");
+        } else {
+          console.error("Silent refresh failed:", data.message);
+        }
       }
     } catch (error) {
       if (showErrors) {
