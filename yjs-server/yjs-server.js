@@ -4,12 +4,17 @@ const Y = require('yjs');
 const { setupWSConnection, setPersistence } = require('y-websocket/bin/utils');
 const { MongoClient } = require('mongodb');
 const { MongodbPersistence } = require('y-mongodb-provider');
-require('dotenv').config({ path: '../Server/.env' });
+const path = require('path');
+require('dotenv').config(); // Load yjs-server/.env if present
+require('dotenv').config({ path: path.join(__dirname, '../Server/.env') }); // Fallback to Server/.env
 
-const port = process.env.PORT || 1234;
-const host = '0.0.0.0'
-const port = process.env.YJS_PORT || 1234;
+const port = parseInt(process.env.PORT || process.env.YJS_PORT || '1234', 10);
 const host = '0.0.0.0';
+
+if (!process.env.DB_URI) {
+  console.error("Error: DB_URI is not defined in the environment variables!");
+  process.exit(1);
+}
 
 const client = new MongoClient(process.env.DB_URI);
 const db = client.db('cowrite_yjs'); // Specify a database name explicitly
