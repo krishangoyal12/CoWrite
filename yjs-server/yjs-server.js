@@ -6,6 +6,8 @@ const { MongoClient } = require('mongodb');
 const { MongodbPersistence } = require('y-mongodb-provider');
 require('dotenv').config({ path: '../Server/.env' });
 
+const port = process.env.PORT || 1234;
+const host = '0.0.0.0'
 const port = process.env.YJS_PORT || 1234;
 const host = '0.0.0.0';
 
