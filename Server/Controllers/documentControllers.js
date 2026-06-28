@@ -64,8 +64,9 @@ const updateDocument = async (req, res) => {
     if (doc.owner.toString() !== req.user.id && !doc.collaborators.map(id => id.toString()).includes(req.user.id)) {
       return res.status(403).json({ message: 'Unauthorized access', success: false });
     }
-    doc.title = req.body.title ?? doc.title;
-    doc.content = req.body.content ?? doc.content;
+    if (req.body.title !== undefined) doc.title = req.body.title;
+    if (req.body.content !== undefined) doc.content = req.body.content;
+    if (req.body.isPublic !== undefined && doc.owner.toString() === req.user.id) doc.isPublic = req.body.isPublic; // Only owner can change public status
     await doc.save();
     res.status(200).json({
       message: 'Document updated successfully',
@@ -141,6 +142,35 @@ const getDocumentById = async (req, res) => {
   }
 };
 
+const getPublicDocument = async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id).populate("owner", "name"); // Only expose owner name for security
+    if (!doc) {
+      return res.status(404).json({ message: 'Document not found', success: false });
+    }
+    if (!doc.isPublic) {
+      return res.status(403).json({ message: 'This document is not public', success: false });
+    }
+    // Return sanitized document
+    res.status(200).json({
+      data: {
+        _id: doc._id,
+        title: doc.title,
+        content: doc.content,
+        owner: doc.owner,
+        updatedAt: doc.updatedAt
+      },
+      success: true,
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Error fetching public document',
+      error: error.message,
+      success: false,
+    });
+  }
+};
+
 const addCollaborator = async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id);
@@ -168,4 +198,24 @@ const addCollaborator = async (req, res) => {
   }
 };
 
-module.exports = { getAllDocuments, createDocument, updateDocument, deleteDocument, getDocumentById, addCollaborator };
+const leaveDocument = async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id);
+    if (!doc) return res.status(404).json({ message: 'Document not found', success: false });
+
+    // Owner cannot "leave" — they must delete instead
+    if (doc.owner.toString() === req.user.id) {
+      return res.status(403).json({ message: 'You are the owner. Delete the document instead.', success: false });
+    }
+
+    // Remove the user from collaborators
+    doc.collaborators = doc.collaborators.filter(c => c.toString() !== req.user.id);
+    await doc.save();
+
+    res.status(200).json({ message: 'You have left the document', success: true });
+  } catch (error) {
+    res.status(500).json({ message: 'Error leaving document', error: error.message, success: false });
+  }
+};
+
+module.exports = { getAllDocuments, createDocument, updateDocument, deleteDocument, getDocumentById, addCollaborator, getPublicDocument, leaveDocument };

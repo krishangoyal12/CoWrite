@@ -99,21 +99,22 @@ export const AIDropdownMenu = ({ editor, closeMenu }) => {
     closeMenu();
   };
 
-  const handleGenerateContent = async () => {
+  const handleGenerateContent = () => {
     if (!customPrompt.trim()) return;
-    setLoading(true);
-    editor.commands.generateText({ task: "generate", prompt: customPrompt });
-    setLoading(false);
-    setShowPromptInput(false);
-    setCustomPrompt("");
+    const promptText = customPrompt;
+    
+    // Close menu instantly to give immediate feedback
     closeMenu();
+    
+    // Execute AI command
+    editor.commands.generateText({ task: "generate", prompt: promptText });
   };
 
   return (
     // Main container for positioning, background, and border.
     <div className="absolute z-50 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-xl">
-      {/* This new inner div handles the scrolling and has the padding. */}
-      <div className="max-h-[80vh] overflow-y-auto p-2">
+      {/* Fixed height to ensure it fits on all screens and scrolls properly */}
+      <div className="max-h-[320px] overflow-y-auto p-2">
         <ul className="flex flex-col gap-1">
           {menuItems.map((item, index) => (
             <li key={index}>

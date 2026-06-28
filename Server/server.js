@@ -11,11 +11,14 @@ const connectToDb = require('./Config/db')
 const authRoutes = require('./Routes/authRoutes')
 const documentRoutes = require('./Routes/documentRoutes')
 
+const aiRoutes = require('./Routes/aiRoutes')
+
 
 app.use(express.json())
 app.use(cookieParser());
 app.use('/api/auth', authRoutes)
 app.use('/api', documentRoutes)
+app.use('/api/ai', aiRoutes)
 
 const port = process.env.PORT || 8000
 const db = process.env.DB_URI

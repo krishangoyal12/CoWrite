@@ -4,7 +4,7 @@
 
 @layer base {
     :root {
-        font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+        font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
     }
@@ -13,5 +13,81 @@
         margin: 0;
         min-width: 320px;
         min-height: 100vh;
+        background-color: #f8fafc;
     }
+
+    ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
+}
+
+.glass-panel {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.tiptap-editor {
+    outline: none !important;
+}
+
+@keyframes fadeOutLabel {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+.tiptap-editor .collaboration-cursor__caret {
+    border-left: 1px solid #0D0D0D;
+    border-right: 1px solid #0D0D0D;
+    margin-left: -1px;
+    margin-right: -1px;
+    pointer-events: auto; /* allow hover */
+    position: relative;
+    word-break: normal;
+}
+
+.tiptap-editor .collaboration-cursor__label {
+    border-radius: 3px 3px 3px 0;
+    color: #fff;
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 600;
+    left: -1px;
+    line-height: normal;
+    padding: 0.1rem 0.3rem;
+    position: absolute;
+    top: -1.4em;
+    user-select: none;
+    white-space: nowrap;
+    opacity: 0;
+    animation: fadeOutLabel 2.5s ease forwards;
+}
+
+.tiptap-editor .collaboration-cursor__caret:hover .collaboration-cursor__label {
+    opacity: 1;
+    animation: none;
+}
+
+@keyframes highlightFade {
+    0% { background-color: #dbeafe; } /* blue-100 */
+    70% { background-color: #dbeafe; }
+    100% { background-color: transparent; }
+}
+
+.ai-highlight-fade {
+    animation: highlightFade 3s ease-out forwards;
+    border-radius: 2px;
 }

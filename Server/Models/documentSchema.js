@@ -17,7 +17,11 @@ const documentSchema = new Schema({
     collaborators:[{
         type: Schema.Types.ObjectId,
         ref: 'User'
-    }]
+    }],
+    isPublic: {
+        type: Boolean,
+        default: false
+    }
 }, {timestamps: true});
 
 const documentModel = model('Document', documentSchema)

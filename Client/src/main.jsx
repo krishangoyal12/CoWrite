@@ -13,13 +13,11 @@ if (!googleClientID) {
 }
 
 createRoot(document.getElementById("root")).render(
-  <StrictMode>
-    <BrowserRouter>
-      <GoogleOAuthProvider clientId={googleClientID}>
-        <AuthProvider>
-          <App />
-        </AuthProvider>
-      </GoogleOAuthProvider>
-    </BrowserRouter>
-  </StrictMode>
+  <BrowserRouter>
+    <GoogleOAuthProvider clientId={googleClientID}>
+      <AuthProvider>
+        <App />
+      </AuthProvider>
+    </GoogleOAuthProvider>
+  </BrowserRouter>
 );

@@ -1,183 +1,211 @@
 # CoWrite ✍️🚀
 
-**CoWrite** is a real-time collaborative document editor, built to enhance team productivity with seamless editing, live cursors, comments, and AI-powered writing assistance.
-
-## 🔥 Features
-- 📝 Rich text editing using TipTap (ProseMirror)
-- 🔁 Real-time multi-user collaboration powered by Yjs
-- 📁 Document dashboard (create, rename, delete)
-- 💾 Auto-save functionality
-- 👥 Live cursors and user presence
-- 💬 Threaded comment system (like Google Docs)
-- 🧠 AI-enhanced tools (rewrite, grammar fix, summarize)
-
-## 🛠️ Tech Stack
-- **Frontend:** React, TipTap, Tailwind CSS
-- **Backend:** Node.js, Express, MongoDB
-- **Collaboration:** Yjs + WebRTC or WebSocket provider
-- **AI Integration:** Google Gemini AI API
-- **Auth:** JWT-based authentication
-
-## 📌 MVP Goals
-- Authentication (signup, login, logout)
-- Document CRUD with auto-save
-- Real-time collaboration (text, cursors)
-- Commenting system
-- AI-powered writing assistant
-
-# CoWrite - Day 1 Tasks
-
-## ✅ Day 1 Progress
-
-### 1. Project Setup
-- Initialized the CoWrite project structure for both client and server.
-- Installed required dependencies for backend (Express, Mongoose, dotenv, cors, cookie-parser, etc.).
-- Installed required dependencies for frontend (React, react-router-dom, @react-oauth/google, etc.).
-
-### 2. Environment Configuration
-- Created `.env` files for both client and server.
-- Set up environment variables for database URI, JWT secret, Google Client ID, and frontend URL.
-
-### 3. Basic Authentication Endpoints
-- Implemented backend routes for:
-  - `/api/auth/signup`
-  - `/api/auth/login`
-  - `/api/auth/google-signup`
-  - `/api/auth/me` (protected route)
-- Added JWT-based authentication with HttpOnly cookies.
-- Added CORS configuration for cross-origin requests.
-
-### 4. Frontend Pages
-- Created Signup and Login pages with forms and Google authentication.
-- Implemented protected Dashboard page.
-
-### 5. Route Protection
-- Added a `PrivateRoute` component to protect the Dashboard route.
-- Verified that only authenticated users can access the Dashboard.
-
-### 6. Google OAuth Integration
-- Integrated Google OAuth using `@react-oauth/google`.
-- Handled Google signup and login on both frontend and backend.
-
-**End of Day 1**
+**CoWrite** is a real-time collaborative document editor built to enhance team productivity with seamless editing, live cursors, threaded comments, AI-powered writing assistance, and secure document sharing.
 
 ---
 
-## ✅ Day 2 Progress
+## 🔥 Features
 
-### 1. Document Dashboard
-- Created a document dashboard page to list all user documents.
-- Added functionality to create, rename, and delete documents from the dashboard.
-- Enabled navigation from the dashboard to the editor for any document.
+### ✏️ Rich Text Editing
+- Full rich text editor powered by **TipTap (ProseMirror)**
+- Bold, Italic, Underline, Strikethrough
+- Headings (H1–H6), font size & family selectors
+- Text alignment (Left, Center, Right, Justify)
+- Text color with color picker
+- Undo / Redo
 
-### 2. Editor Integration
-- Integrated the rich text editor()tip-tap into the main application flow.
-- Connected the editor to the backend for loading and saving documents.
-- Ensured seamless transition between the dashboard and the editor.
+### 🔁 Real-Time Collaboration
+- Multi-user simultaneous editing powered by **Yjs + WebSocket**
+- **Named live cursors** — each collaborator's cursor shows their name and a unique color (Google Docs style), fading out after inactivity
+- Live user presence avatars in the top bar with hover tooltips
+- Invite collaborators by email from inside the editor
 
-### 3. Basic text decoration functionality
-- Implemented the functionality for bold, italic, strikethrough by using tip-tap's inbuilt extension.
+### 💬 Google Docs-Style Comments
+- Select any text and add a comment from the formatting bubble menu
+- Comments appear in the **right margin** aligned to the selected text
+- Threaded replies on each comment
+- Resolve comments with a ✓ tick — yellow highlight is **immediately** removed without requiring a page reload
+- `Enter` to post, `Shift+Enter` for a new line inside the comment box
 
-### 4. Font Size and Font Family Functionality
-- Implemented a custom `FontStyle` mark extension to support inline font size and font family changes.
-- Added font size and font family dropdowns to the editor toolbar.
-- Ensured font size and font family can be applied to any selection, including inside headings and paragraphs.
+### 🧠 AI Writing Tools (Google Gemini)
+- Summarize Document
+- Bullet Point Summary
+- Improve Writing
+- Grammar Check
+- Professional Tone
+- Format Document
+- Custom AI Prompt
+- **Ask Document** — ask questions about the content
 
-### 5. Autosave Feature
-- Implemented autosave functionality to save the editor content to the backend every 3 seconds.
-- Used `setInterval` within a React `useEffect` to trigger the save operation.
-- Ensured autosave does not interfere with manual save operations.
+### 📁 Document Dashboard
+- Create, rename, and delete documents
+- **Smart deletion modals:**
+  - If you are the **owner** → warns that all collaborators will lose access
+  - If you are a **collaborator** → warns that your access will be revoked and removes you from the doc (owner's copy is unaffected)
+- Shared documents appear clearly in your dashboard
 
-### 6. Heading Functionality
-- Verified and fixed heading support using the default TipTap `Heading` extension.
-- Ensured selecting a heading from the toolbar correctly changes the block type and displays the appropriate HTML (`<h1>`, `<h2>`, etc.).
-- Confirmed compatibility of headings with font size and font family marks.
+### 📤 Export & Share
+- **Download as PDF** — generates a clean, styled PDF in the browser (no server required)
+- **Public View Link** — owners can toggle a public link; anyone with the link can view a **read-only, static snapshot** of the document without logging in
+- Both options live in a single **Export dropdown** in the editor toolbar
+
+### 🔐 Security
+- JWT-based auth with **HttpOnly cookies**
+- Public document endpoint (`/api/documents/public/:id`) requires `isPublic: true` — hard `403` for private docs
+- Public viewer is fully stripped of Yjs/WebSocket — physically cannot edit or connect to the live editing session
+- Only the document **owner** can toggle public access or change `isPublic`
+
+### 🔒 Authentication
+- Email/password Signup & Login
+- Google OAuth integration
+- Protected routes — unauthenticated users are redirected to login
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+|---|---|
+| **Frontend** | React, TipTap, Vite, CSS |
+| **Backend** | Node.js, Express, MongoDB (Mongoose) |
+| **Collaboration** | Yjs + y-websocket + y-mongodb-provider |
+| **AI** | Google Gemini API |
+| **Auth** | JWT + HttpOnly Cookies, Google OAuth |
+| **PDF Export** | html2pdf.js (client-side) |
+
+---
+
+## 📁 Project Structure
+
+```
+CoWrite/
+├── Client/          # React frontend (Vite)
+│   └── src/
+│       ├── Pages/         # Editor, Dashboard, Login, Signup, PublicEditor
+│       ├── Components/    # CollaboratorBar, EditorToolbar, CommentPanel, ...
+│       ├── Extensions/    # TipTap custom extensions (CommentExtension, FontStyle, AIExtension)
+│       └── Context/       # Auth context
+├── Server/          # Express REST API
+│   ├── Controllers/       # Document & Auth controllers
+│   ├── Models/            # Mongoose schemas (User, Document)
+│   ├── Routes/            # API routes
+│   └── Middlewares/       # JWT auth middleware
+└── yjs-server/      # Dedicated Yjs WebSocket server with MongoDB persistence
+```
+
+---
+
+## 🚀 Local Setup
+
+### Prerequisites
+- Node.js ≥ 18
+- MongoDB Atlas URI (or local MongoDB)
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/your-username/CoWrite.git
+cd CoWrite
+```
+
+### 2. Server setup
+```bash
+cd Server
+npm install
+```
+Create `Server/.env`:
+```env
+DB_URI=your_mongodb_uri
+JWT_SECRET=your_jwt_secret
+FRONTEND_URL=http://localhost:5173
+PORT=8000
+YJS_PORT=1234
+```
+
+### 3. Yjs WebSocket server
+```bash
+cd yjs-server
+npm install
+node yjs-server.js
+```
+
+### 4. Client setup
+```bash
+cd Client
+npm install
+```
+Create `Client/.env`:
+```env
+VITE_URL=http://localhost:8000
+VITE_WEBSOCKET_URL=ws://localhost:1234
+VITE_GEMINI_API_KEY=your_gemini_api_key
+VITE_GOOGLE_CLIENT_ID=your_google_client_id
+```
+
+### 5. Start everything
+```bash
+# Terminal 1 - Backend
+cd Server && node server.js
+
+# Terminal 2 - Yjs server
+cd yjs-server && node yjs-server.js
+
+# Terminal 3 - Frontend
+cd Client && npm run dev
+```
+
+---
+
+## 📌 API Endpoints
+
+### Auth
+| Method | Route | Description |
+|---|---|---|
+| POST | `/api/auth/signup` | Register |
+| POST | `/api/auth/login` | Login |
+| POST | `/api/auth/google-signup` | Google OAuth |
+| GET | `/api/auth/me` | Get current user |
+
+### Documents
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| GET | `/api/documents` | ✅ | List all documents for user |
+| POST | `/api/documents` | ✅ | Create new document |
+| GET | `/api/documents/:id` | ✅ | Get document (owner/collaborator only) |
+| PUT | `/api/documents/:id` | ✅ | Update title / content / isPublic |
+| DELETE | `/api/documents/:id` | ✅ Owner only | Delete document |
+| DELETE | `/api/documents/:id/leave` | ✅ Collaborator | Remove self from collaborators |
+| POST | `/api/documents/:id/collaborators` | ✅ Owner only | Add collaborator by email |
+| GET | `/api/documents/public/:id` | ❌ No auth | View public document (read-only, sanitized) |
 
 ---
 
 ## 📝 How to Use
 
-- **Font Size/Family:** Select text and choose a font size or family from the toolbar to apply the style.
-- **Headings:** Use the dropdown to switch between normal text and headings (H1–H6).
-- **Autosave:** The editor automatically saves your work every 3 seconds.
-- **Manual Save:** Click the "Save" button to save and return to the dashboard.
-- **Dashboard:** View, create, rename, and delete your documents from the dashboard. Click any document to open it in the editor.
-
-**End of Day 2**
-
----
-
-# CoWrite - Day 3 Progress & Local Setup Guide
-
-## ✅ Day 3 Progress
-
-### 1. Real-Time Collaboration with Yjs WebSocket Server
-- Set up a **dedicated Yjs WebSocket server** in a new `yjs-server/` folder for real-time collaborative editing.
-- Configured the frontend to use an environment variable (`VITE_WEBSOCKET_URL`) for the WebSocket server URL.
-- Implemented the functionality of inviting collaborators through email to contribute on a document.
-- Verified that multiple users can collaborate in real time with unique cursor colors and names.
-
-### 2. Collaboration Cursor UI Improvements
-- Updated the cursor UI to display only the colored caret and user name above the caret (Google Docs style).
-- Hid the selection bar and label for remote selections using custom CSS.
-
-### 3. Collaborator Permissions
-- Ensured that collaborators can view the document title in both the dashboard and editor, but **only the owner can edit the title**.
-
-### 4. Environment Variable Management
-- Moved all environment-specific URLs (API, WebSocket) to `.env` files for easy switching between local and production environments.
-
-### 5. Project Structure & Clean-Up
-- Created a separate `yjs-server/` folder with its own `package.json` and dependencies.
-
-**End of Day 3**
+| Action | How |
+|---|---|
+| **Create a doc** | Dashboard → "+ New Document" |
+| **Invite collaborator** | Open doc → type email in the top bar → "Add" |
+| **Leave a shared doc** | Dashboard → ⋮ menu → Delete (you'll be prompted) |
+| **Add a comment** | Select text → click 💬 in the bubble menu |
+| **Resolve a comment** | Click the ✓ on the comment thread |
+| **Download PDF** | Editor → "Export ↓" → "Download as PDF" |
+| **Share public link** | Editor → "Export ↓" → toggle "Public View Link" → Copy |
+| **AI tools** | Editor → "✨ AI Tools" dropdown |
 
 ---
 
-## ✅ Day 4 Progress
+## 🌐 Live Links
 
-### 1. AI Integration with Google Gemini
-- Integrated Google's Gemini AI API to power intelligent writing assistance features.
-- Created a custom Tiptap extension (`AIExtension`) to handle AI communication and responses.
-- Configured environment variables to securely store the Gemini API key.
-- Implemented error handling for AI requests with user-friendly notifications.
+| Service | URL |
+|---|---|
+| **Frontend (Netlify)** | https://krishan-cowrite.netlify.app |
+| **Backend (Render)** | https://cowrite-x48q.onrender.com |
 
-### 2. AI-Powered Document Tools
-- **Summarize Document:** Generate concise summaries of document content.
-- **Bullet Summary:** Create bullet point summaries of the document.
-- **Improve Writing:** Enhance grammar, clarity, and overall writing quality.
-- **Format Document:** Automatically apply appropriate headings, lists, and structure.
-- **Professional Tone:** Convert content to a more formal, business-like tone.
-- **Grammar Check:** Find and fix grammatical and spelling errors.
-
-### 3. "Ask Document" Feature
-- Added capability to ask questions about document content and receive AI-generated answers.
-- Implemented an intuitive UI with a dedicated toolbar button and input dialog.
-- Added keyboard shortcuts (Enter to submit, Esc to cancel) for better UX.
-
-### 4. AI UI Components
-- **AI Dropdown Menu:** Created a scrollable dropdown with all AI features.
-- **Custom Prompt Support:** Added interface for users to write custom prompts.
-- **Loading Indicators:** Implemented loading states while waiting for AI responses.
-
-### 5. Output Formatting & Quality
-- Added robust processing of AI responses to ensure clean, properly formatted HTML content.
-- Removed markdown artifacts, code blocks, and excessive whitespace from AI responses.
-- Implemented defensive error handling to prevent editor state conflicts.
-
-### 6. UX Improvements
-- Added keyboard navigation for AI features.
-- Implemented auto-close behavior for dropdowns and modals.
-
-**End of Day 4**
+> **Note:** The backend is hosted on Render's free tier and may take 30–60s to wake up from a cold start. Consider setting up [UptimeRobot](https://uptimerobot.com) to ping it every 5 minutes to keep it warm.
 
 ---
 
 ## 🚧 Work in Progress
 This project is actively being developed. Contributions and ideas are welcome!
 
----
-**Netlify**:- https://krishan-cowrite.netlify.app  
-**Render**:- https://cowrite-x48q.onrender.com
-
-Stay tuned for updates, and feel free to fork, star ⭐,
+Feel free to fork, star ⭐, and contribute!

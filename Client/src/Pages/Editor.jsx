@@ -7,6 +7,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
 import Color from "@tiptap/extension-color";
 import FontStyle from "../Extensions/FontStyle";
+import { AiHighlight } from "../Extensions/AiHighlight";
 import { AIExtension } from "../Extensions/AIExtension";
 import { AIBubbleMenu } from "../../Components/AIBubbleMenu";
 import { AIDropdownMenu } from "../../Components/AIDropdownMenu";
@@ -24,11 +25,14 @@ import {
 } from "react-icons/md";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
+import html2pdf from "html2pdf.js";
+import { FormattingBubbleMenu } from "../../Components/FormattingBubbleMenu";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { useAuth } from "../../Context/useAuth";
 import { CommentExtension } from "../Extensions/CommentExtension";
-import { CommentPanel, CommentBubble } from "../../Components/CommentPanel";
+import { CommentThread, CommentBubble } from "../../Components/CommentPanel";
+import { CollaboratorBar } from "../Components/CollaboratorBar";
 
 const COLOR_GRID = [
   "#000000",
@@ -123,6 +127,29 @@ function getUserColor(userIdOrEmail) {
   return COLLAB_COLORS[Math.abs(hash) % COLLAB_COLORS.length];
 }
 
+function NewCommentBoxInline({ onCancel, onSave }) {
+  const [text, setText] = React.useState('');
+  return (
+    <div className="bg-white border rounded-lg shadow-lg p-4 w-80">
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (text.trim()) onSave(text.trim()); }
+        }}
+        placeholder="Add a comment… (Enter to post, Shift+Enter for newline)"
+        className="w-full border rounded p-2 text-sm mb-2 resize-none"
+        rows={3}
+        autoFocus
+      />
+      <div className="flex justify-end gap-2">
+        <button onClick={onCancel} className="px-3 py-1 bg-gray-100 rounded text-sm hover:bg-gray-200">Cancel</button>
+        <button onClick={() => { if (text.trim()) onSave(text.trim()); }} disabled={!text.trim()} className="bg-blue-600 text-white px-3 py-1 rounded text-sm disabled:bg-blue-300">Comment</button>
+      </div>
+    </div>
+  );
+}
+
 export default function Editor() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -146,13 +173,72 @@ export default function Editor() {
   const [collaboratorEmail, setCollaboratorEmail] = useState("");
   const [collaborators, setCollaborators] = useState([]);
   const [adding, setAdding] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef(null);
 
-  const ydoc = useMemo(() => new Y.Doc(), []);
-  const provider = useMemo(
-    () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc),
-    [id, ydoc]
+  const [ydoc] = useState(() => new Y.Doc());
+  const [provider] = useState(
+    () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc)
   );
-  const [showComments, setShowComments] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      provider.destroy();
+      ydoc.destroy();
+    };
+  }, [provider, ydoc]);
+  
+  const [awarenessUsers, setAwarenessUsers] = useState([]);
+  useEffect(() => {
+    if (!provider) return;
+    const updateAwareness = (changes) => {
+      const states = provider.awareness.getStates();
+      
+      // Update UI for active users
+      const users = [];
+      const seenNames = new Set();
+      states.forEach((state, clientID) => {
+        if (clientID !== provider.awareness.clientID && state.user) {
+          if (!seenNames.has(state.user.name)) {
+            seenNames.add(state.user.name);
+            users.push(state.user);
+          }
+        }
+      });
+      setAwarenessUsers(users);
+
+      // Reset cursor label animation for users who just moved their cursor
+      if (changes && (changes.updated || changes.added)) {
+        const activeClients = [...(changes.updated || []), ...(changes.added || [])];
+        activeClients.forEach(clientId => {
+          if (clientId !== provider.awareness.clientID) {
+            const state = states.get(clientId);
+            if (state && state.user && state.user.name) {
+              const labels = Array.from(document.querySelectorAll('.collaboration-cursor__label'));
+              const userLabel = labels.find(el => el.textContent === state.user.name);
+              if (userLabel) {
+                userLabel.style.animation = "none";
+                void userLabel.offsetWidth; // trigger reflow
+                userLabel.style.animation = "fadeOutLabel 2.5s ease forwards";
+              }
+            }
+          }
+        });
+      }
+    };
+    
+    provider.awareness.on("change", updateAwareness);
+    updateAwareness();
+
+    return () => {
+      provider.awareness.off("change", updateAwareness);
+    };
+  }, [provider]);
+
+  const [activeComment, setActiveComment] = useState(null);
+  const [draftComment, setDraftComment] = useState(null);
+  const [commentTop, setCommentTop] = useState(0);
 
   const editor = useEditor({
     extensions: [
@@ -171,6 +257,7 @@ export default function Editor() {
         },
       }),
       AIExtension.configure({ apiKey: import.meta.env.VITE_GEMINI_API_KEY }),
+      AiHighlight,
       CommentExtension,
     ],
     autofocus: true,
@@ -190,14 +277,57 @@ export default function Editor() {
     },
   });
 
+  useEffect(() => {
+    if (!editor) return;
+    const handleClick = (e) => {
+      // Find the closest comment-mark if we clicked inside one
+      const commentMark = e.target.closest('.comment-mark');
+      
+      if (commentMark) {
+        const id = commentMark.getAttribute('data-comment-id');
+        const comment = editor.storage.comment?.comments?.[id];
+        if (comment && !comment.resolved) {
+          setActiveComment(comment);
+          setDraftComment(null);
+          // calculate position
+          try {
+            const coords = editor.view.coordsAtPos(comment.from);
+            setCommentTop(coords.top);
+          } catch (err) {}
+        }
+      } else {
+        // Only close if we click outside the comment thread container
+        if (!e.target.closest('.comment-thread-container')) {
+          setActiveComment(null);
+        }
+      }
+    };
+    
+    editor.view.dom.addEventListener('click', handleClick);
+    return () => editor.view.dom.removeEventListener('click', handleClick);
+  }, [editor]);
+
+  // Update position of draft comment
+  useEffect(() => {
+    if (draftComment && editor) {
+      try {
+        const coords = editor.view.coordsAtPos(draftComment.from);
+        setCommentTop(coords.top);
+      } catch (err) {}
+    }
+  }, [draftComment, editor]);
+
   const fetchCollaborators = async () => {
     try {
       const res = await fetch(`${baseURL}/api/documents/${id}`, {
         credentials: "include",
       });
       const data = await res.json();
-      if (res.ok && data.data?.collaborators) {
-        setCollaborators(data.data.collaborators);
+      if (res.ok && data.data) {
+        const owner = data.data.owner;
+        const collabs = data.data.collaborators || [];
+        const allParticipants = [owner, ...collabs].filter(Boolean);
+        setCollaborators(allParticipants);
       }
     } catch {
       // empty
@@ -251,6 +381,7 @@ export default function Editor() {
         const title = data.data?.title || "Untitled Document";
         setDocTitle(title);
         setDocOwnerId(data.data?.owner?._id || data.data?.owner);
+        setIsPublic(data.data?.isPublic || false);
         editor.setEditable(true);
         setLoading(false);
       } catch {
@@ -265,11 +396,7 @@ export default function Editor() {
     loadDocument();
   }, [id, editor, user]);
 
-  useEffect(() => {
-    if (!editor || loading) return;
-    saveTimeout.current = setInterval(() => saveDocument(), 3000);
-    return () => clearInterval(saveTimeout.current);
-  }, [editor, docTitle, id, loading]);
+
 
   const saveDocument = async () => {
     try {
@@ -289,6 +416,72 @@ export default function Editor() {
     toast.success("Document saved!");
     navigate("/dashboard");
   };
+
+  const handleDownloadPDF = () => {
+    const element = document.createElement("div");
+    element.innerHTML = editor.getHTML();
+    element.style.padding = "40px";
+    element.style.fontFamily = "sans-serif";
+    
+    // Minimal styling so the PDF looks okay
+    const style = document.createElement("style");
+    style.innerHTML = `
+      h1, h2, h3 { color: #111; }
+      p { color: #333; line-height: 1.5; }
+    `;
+    element.appendChild(style);
+
+    const opt = {
+      margin:       0.5,
+      filename:     `${docTitle || 'document'}.pdf`,
+      image:        { type: 'jpeg', quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+    };
+
+    toast.promise(
+      html2pdf().set(opt).from(element).save(),
+      {
+        loading: 'Generating PDF...',
+        success: 'PDF downloaded!',
+        error: 'Failed to generate PDF'
+      }
+    );
+  };
+
+  const handlePublicToggle = async (e) => {
+    const newValue = e.target.checked;
+    setIsPublic(newValue);
+    try {
+      const res = await fetch(`${baseURL}/api/documents/${id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          isPublic: newValue,
+          // Snapshot current content+title to DB so the public viewer is up-to-date
+          ...(newValue && { title: docTitle, content: editor.getHTML() }),
+        }),
+      });
+      if (!res.ok) throw new Error();
+      toast.success(newValue ? "Public link enabled!" : "Public link disabled");
+    } catch {
+      toast.error("Failed to update public setting");
+      setIsPublic(!newValue); // revert
+    }
+  };
+
+  // Close export dropdown on outside click
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handler = (e) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showExportMenu]);
 
   const handleHeadingChange = (e) => {
     const value = e.target.value;
@@ -387,52 +580,24 @@ export default function Editor() {
     setAskDocPrompt("");
   };
 
-  if (loading || !editor) {
-    return (
-      <div className="fixed inset-0 flex items-center justify-center bg-gray-100 z-50">
-        <div className="text-lg text-blue-700">Loading...</div>
-      </div>
-    );
-  }
-
   return (
     <div className="fixed inset-0 bg-gray-100 z-50 flex flex-col">
-      <div className="flex items-center gap-3 px-8 py-2 bg-blue-50 border-b border-blue-100">
-        <input
-          type="email"
-          value={collaboratorEmail}
-          onChange={(e) => setCollaboratorEmail(e.target.value)}
-          placeholder="Invite collaborator by email"
-          className="border px-3 py-1 rounded w-64"
-          disabled={adding}
-        />
-        <button
-          onClick={handleAddCollaborator}
-          className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700"
-          disabled={adding || !collaboratorEmail}
-        >
-          {adding ? "Adding..." : "Add"}
-        </button>
-        <div className="ml-6 text-sm text-gray-700">
-          <span className="font-semibold">Collaborators:</span>
-          {collaborators.length === 0 && (
-            <span className="ml-2 text-gray-400">None</span>
-          )}
-          {collaborators.map((c) => (
-            <span
-              key={typeof c === "object" && c._id ? c._id : c}
-              className="ml-2 bg-gray-200 px-2 py-0.5 rounded"
-            >
-              {typeof c === "object" ? c.email || c.username || c._id : c}
-            </span>
-          ))}
-        </div>
-      </div>
+      <CollaboratorBar 
+        collaboratorEmail={collaboratorEmail}
+        setCollaboratorEmail={setCollaboratorEmail}
+        adding={adding}
+        handleAddCollaborator={handleAddCollaborator}
+        collaborators={collaborators}
+        currentUser={user}
+      />
 
       <div className="flex items-center bg-white px-8 py-3 shadow h-16 border-b border-gray-200">
-        <div className="flex items-center gap-3 select-none">
+        <div 
+          className="flex items-center gap-3 select-none cursor-pointer"
+          onClick={() => navigate("/dashboard")}
+        >
           <img src="/logo.png" alt="CoWrite Logo" className="w-10 h-10" />
-          <span className="text-2xl font-extrabold text-blue-700 tracking-wide">
+          <span className="text-2xl font-extrabold text-blue-700 tracking-wide hover:opacity-80 transition-opacity">
             CoWrite
           </span>
         </div>
@@ -457,12 +622,118 @@ export default function Editor() {
             />
           )}
         </div>
-        <button
-          onClick={handleSave}
-          className="ml-4 bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 transition"
-        >
-          Save
-        </button>
+
+        {awarenessUsers.length > 0 && (
+          <div className="flex -space-x-2 mr-4" title="Currently viewing this document">
+            {awarenessUsers.map((u, idx) => (
+              <div 
+                key={idx}
+                className="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold shadow-sm relative group cursor-pointer hover:z-10 transition-transform hover:scale-110"
+                style={{ backgroundColor: u.color }}
+              >
+                {u.name.charAt(0).toUpperCase()}
+                <div className="absolute top-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
+                  {u.name}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="flex gap-2 ml-4 items-center">
+          {/* Export / Share dropdown */}
+          <div className="relative" ref={exportMenuRef}>
+            <button
+              onClick={() => setShowExportMenu(v => !v)}
+              className="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200 transition font-medium flex items-center gap-2 border border-gray-200"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+              </svg>
+              Export
+              <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showExportMenu && (
+              <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+                {/* Download PDF */}
+                <button
+                  onClick={() => { handleDownloadPDF(); setShowExportMenu(false); }}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition text-left group"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center group-hover:bg-red-100 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-gray-800">Download as PDF</div>
+                    <div className="text-xs text-gray-500">Save a copy to your device</div>
+                  </div>
+                </button>
+
+                <div className="border-t border-gray-100 mx-4" />
+
+                {/* Public View Link */}
+                {user?.id === docOwnerId ? (
+                  <div className="px-4 py-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                          </svg>
+                        </div>
+                        <div>
+                          <div className="text-sm font-semibold text-gray-800">Public View Link</div>
+                          <div className="text-xs text-gray-500">{isPublic ? 'Anyone with the link can view' : 'Only you can access'}</div>
+                        </div>
+                      </div>
+                      {/* Toggle */}
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" className="sr-only" checked={isPublic} onChange={handlePublicToggle} />
+                        <div className={`w-10 h-6 rounded-full transition-colors ${isPublic ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow transition-transform ${isPublic ? 'translate-x-4' : ''}`}></div>
+                      </label>
+                    </div>
+                    {isPublic && (
+                      <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
+                        <span className="text-xs text-gray-500 flex-1 truncate">{window.location.origin}/public/{id}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${window.location.origin}/public/${id}`);
+                            toast.success('Link copied!');
+                          }}
+                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 whitespace-nowrap"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="px-4 py-3 flex items-center gap-3 opacity-50">
+                    <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                      </svg>
+                    </div>
+                    <div className="text-sm text-gray-500">Only the owner can share publicly</div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <button
+            onClick={handleSave}
+            className="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 transition"
+          >
+            Save
+          </button>
+        </div>
       </div>
 
       <div className="flex gap-2 items-center bg-gray-50 px-8 py-2 shadow-sm border-b border-gray-100 relative">
@@ -736,36 +1007,73 @@ export default function Editor() {
             <span className="text-xs text-gray-400">
               Press <b>Enter</b> to ask, <b>Esc</b> to cancel.
             </span>
-            <button
-              onClick={() => setShowComments(!showComments)}
-              className={`p-2 rounded transition text-xl flex items-center justify-center ${
-                showComments
-                  ? "bg-blue-600 text-white"
-                  : "bg-white text-gray-700 hover:bg-blue-50"
-              }`}
-              title="Comments"
-            >
-              <FiMessageSquare />
-            </button>
           </div>
         )}
       </div>
 
-      <div className="flex-1 justify-center py-8 bg-gray-100 overflow-y-auto">
-        <div className="flex">
-          <div
-            className="bg-white rounded-lg shadow-md w-full max-w-4xl px-16 py-10 mx-auto relative"
-            style={{ minHeight: "80vh" }}
-          >
+      {/* Loading overlay — sits on top but editor stays mounted so Yjs can sync */}
+      {loading && (
+        <div className="fixed inset-0 flex items-center justify-center bg-gray-100/80 z-[100] backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+            <span className="text-blue-700 font-medium">Loading document...</span>
+          </div>
+        </div>
+      )}
+      <div className="flex-1 overflow-y-auto bg-[#f8f9fa] flex justify-center py-10 relative">
+        <div className="bg-white max-w-[850px] w-full min-h-[1056px] shadow-sm border border-gray-200 rounded p-12 md:p-16 mb-20 relative">
+          <div className="mx-auto" style={{ maxWidth: 650 }}>
             <EditorContent
               editor={editor}
-              className="prose max-w-none text-left tiptap-editor"
+              className="prose max-w-none text-left tiptap-editor min-h-[500px]"
             />
-            {editor && <AIBubbleMenu editor={editor} />}
-            {editor && <CommentBubble editor={editor} />}
+            {editor && (
+              <FormattingBubbleMenu 
+                editor={editor} 
+                onAddComment={() => {
+                  const { from, to } = editor.state.selection;
+                  if (from !== to) {
+                    setDraftComment({ from, to });
+                  }
+                }}
+              />
+            )}
           </div>
-          {showComments && editor && <CommentPanel editor={editor} />}
         </div>
+
+        {/* Floating Right Margin Comments */}
+        {(activeComment || draftComment) && (
+          <div 
+            className="comment-thread-container fixed z-40 transition-all duration-200 ease-out"
+            style={{ 
+              top: Math.max(130, commentTop), 
+              right: 'max(20px, calc(50vw - 425px - 320px))'
+            }}
+          >
+            {draftComment ? (
+              <NewCommentBoxInline 
+                onCancel={() => setDraftComment(null)}
+                onSave={(text) => {
+                  editor.commands.addComment({
+                    text,
+                    from: draftComment.from,
+                    to: draftComment.to,
+                    userId: user?.id,
+                    userName: user?.name || 'Anonymous'
+                  });
+                  setDraftComment(null);
+                  toast.success("Comment added");
+                }}
+              />
+            ) : (
+              <CommentThread 
+                comment={activeComment}
+                editor={editor}
+                onClose={() => setActiveComment(null)}
+              />
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

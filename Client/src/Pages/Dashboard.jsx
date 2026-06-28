@@ -81,17 +81,31 @@ export default function Dashboard() {
   }, [menuOpenId]);
 
   const handleDelete = async () => {
+    const docToDelete = documents.find((doc) => doc._id === deleteId);
+    const isOwner = user && docToDelete &&
+      (docToDelete.owner?._id === user.id || docToDelete.owner === user.id);
+
     try {
-      const res = await fetch(`${baseURL}/api/documents/${deleteId}`, {
-        method: "DELETE",
-        credentials: "include" ,
-      });
+      let res;
+      if (isOwner) {
+        // Owner: permanently delete the document
+        res = await fetch(`${baseURL}/api/documents/${deleteId}`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+      } else {
+        // Collaborator: remove self from the collaborators list
+        res = await fetch(`${baseURL}/api/documents/${deleteId}/leave`, {
+          method: "DELETE",
+          credentials: "include",
+        });
+      }
       const data = await res.json();
       if (res.ok) {
         setDocuments((docs) => docs.filter((doc) => doc._id !== deleteId));
-        toast.success("Document deleted");
+        toast.success(isOwner ? "Document deleted" : "You've left the document");
       } else {
-        toast.error(data.message || "Delete failed");
+        toast.error(data.message || "Failed");
       }
     } catch {
       toast.error("Network error");
@@ -99,6 +113,7 @@ export default function Dashboard() {
     setDeleteId(null);
     setMenuOpenId(null);
   };
+
 
   const handleRename = (id, currentTitle) => {
     setRenameId(id);
@@ -199,8 +214,21 @@ export default function Dashboard() {
         )}
       </h1>
       {documents.length === 0 ? (
-        <div className="text-gray-500 text-center mt-12">
-          Nothing to show, create your first document!
+        <div className="flex flex-col items-center justify-center mt-20 p-12 bg-white rounded-3xl shadow-sm border border-gray-100 text-center max-w-lg mx-auto">
+          <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-6">
+            <svg className="w-12 h-12 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">No documents yet</h2>
+          <p className="text-gray-500 mb-8">Start capturing your thoughts, notes, and collaborative ideas by creating your first document.</p>
+          <button
+            onClick={handleCreateNewDocument}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-medium transition-all hover:-translate-y-1 hover:shadow-lg shadow-blue-200"
+          >
+            <FiPlus className="text-xl" />
+            Create First Document
+          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
@@ -354,43 +382,55 @@ export default function Dashboard() {
       )}
 
       {/* Delete Modal rendered ONCE outside the map */}
-      {deleteId && (
-        <div
-          className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50"
-          onClick={() => setDeleteId(null)}
-        >
+      {deleteId && (() => {
+        const docToDelete = documents.find((doc) => doc._id === deleteId);
+        const isOwner = user && docToDelete && (docToDelete.owner?._id === user.id || docToDelete.owner === user.id);
+        
+        return (
           <div
-            className="bg-white rounded-lg shadow-lg p-6 w-80 flex flex-col gap-4"
-            onClick={(e) => e.stopPropagation()}
+            className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-30 z-50"
+            onClick={() => setDeleteId(null)}
           >
-            <h2 className="text-lg font-semibold text-red-600">
-              Delete Document
-            </h2>
-            <p className="text-gray-700">
-              Are you sure you want to delete{" "}
-              <span className="font-bold">
-                {documents.find((doc) => doc._id === deleteId)?.title ||
-                  "Untitled Document"}
-              </span>
-              ? This action cannot be undone.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button
-                className="px-4 py-1 rounded bg-gray-200 hover:bg-gray-300"
-                onClick={() => setDeleteId(null)}
-              >
-                Cancel
-              </button>
-              <button
-                className="px-4 py-1 rounded bg-red-600 text-white hover:bg-red-700"
-                onClick={handleDelete}
-              >
-                Delete
-              </button>
+            <div
+              className="bg-white rounded-lg shadow-lg p-6 w-[340px] flex flex-col gap-4"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 className="text-lg font-semibold text-red-600">
+                {isOwner ? "Delete Document" : "Remove Access"}
+              </h2>
+              <div className="text-gray-700 text-sm leading-relaxed">
+                <p className="mb-2">
+                  Are you sure you want to delete{" "}
+                  <span className="font-bold">{docToDelete?.title || "Untitled Document"}</span>?
+                </p>
+                {isOwner ? (
+                  <p className="text-red-600 bg-red-50 p-2 rounded text-xs border border-red-100">
+                    <strong>Warning:</strong> You are the owner. This action cannot be undone and <b>all collaborators will lose access</b> immediately.
+                  </p>
+                ) : (
+                  <p className="text-yellow-700 bg-yellow-50 p-2 rounded text-xs border border-yellow-100">
+                    <strong>Note:</strong> Since this document is shared with you, deleting it will only <b>revoke your access</b>.
+                  </p>
+                )}
+              </div>
+              <div className="flex justify-end gap-2 mt-2">
+                <button
+                  className="px-4 py-1.5 rounded-md bg-gray-100 hover:bg-gray-200 font-medium text-gray-700 transition"
+                  onClick={() => setDeleteId(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-1.5 rounded-md bg-red-600 text-white font-medium hover:bg-red-700 transition"
+                  onClick={handleDelete}
+                >
+                  {isOwner ? "Delete for everyone" : "Remove my access"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Floating + icon button */}
       <button
