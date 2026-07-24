@@ -184,6 +184,7 @@ export default function Editor() {
   const [adding, setAdding] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [copied, setCopied] = useState(false);
   const exportMenuRef = useRef(null);
 
   const [ydoc] = useState(() => new Y.Doc());
@@ -374,6 +375,28 @@ export default function Editor() {
         setDocTitle(title);
         setDocOwnerId(data.data?.owner?._id || data.data?.owner);
         setIsPublic(data.data?.isPublic || false);
+
+        // Initialize editor content from database if Yjs document is empty or if sync is delayed/fails
+        if (data.data?.content) {
+          let contentInitialized = false;
+          const setInitialContent = () => {
+            if (contentInitialized) return;
+            const yxml = ydoc.getXmlFragment("default");
+            if (yxml.length === 0) {
+              editor.commands.setContent(data.data.content);
+            }
+            contentInitialized = true;
+          };
+
+          if (provider.synced) {
+            setInitialContent();
+          } else {
+            provider.once("sync", setInitialContent);
+            // Fallback timeout in case the websocket server is down or slow to sync
+            setTimeout(setInitialContent, 1000);
+          }
+        }
+
         editor.setEditable(true);
         setLoading(false);
       } catch {
@@ -386,7 +409,7 @@ export default function Editor() {
       }
     };
     loadDocument();
-  }, [id, editor, user]);
+  }, [id, editor, user, provider, ydoc]);
 
 
 
@@ -637,82 +660,85 @@ export default function Editor() {
           <div className="relative" ref={exportMenuRef}>
             <button
               onClick={() => setShowExportMenu(v => !v)}
-              className="bg-gray-100 text-gray-700 px-4 py-2 rounded hover:bg-gray-200 transition font-medium flex items-center gap-2 border border-gray-200"
+              className="bg-white hover:bg-gray-50 active:scale-95 text-gray-700 px-4 py-2 rounded-lg transition-all duration-200 font-semibold flex items-center gap-2 border border-gray-200 shadow-sm text-sm"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
               Export
-              <svg xmlns="http://www.w3.org/2000/svg" className={`h-3 w-3 transition-transform ${showExportMenu ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <svg xmlns="http://www.w3.org/2000/svg" className={`h-3.5 w-3.5 text-gray-400 transition-transform duration-200 ${showExportMenu ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
               </svg>
             </button>
 
             {showExportMenu && (
-              <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-gray-200 rounded-xl shadow-xl z-50 overflow-hidden">
+              <div className="absolute right-0 top-full mt-2 w-76 bg-white border border-gray-150 rounded-xl shadow-xl z-50 overflow-hidden divide-y divide-gray-100 animate-in fade-in slide-in-from-top-2 duration-200">
                 {/* Download PDF */}
                 <button
                   onClick={() => { handleDownloadPDF(); setShowExportMenu(false); }}
-                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition text-left group"
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 hover:bg-gray-50 active:bg-gray-100/70 transition text-left group"
                 >
-                  <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center group-hover:bg-red-100 transition">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="w-9 h-9 rounded-lg bg-rose-50 flex items-center justify-center group-hover:bg-rose-100 transition duration-250">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5 text-rose-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
                   </div>
                   <div>
-                    <div className="text-sm font-semibold text-gray-800">Download as PDF</div>
-                    <div className="text-xs text-gray-500">Save a copy to your device</div>
+                    <div className="text-sm font-bold text-gray-800">Download as PDF</div>
+                    <div className="text-[11px] text-gray-400 font-medium">Save a copy to your local device</div>
                   </div>
                 </button>
 
-                <div className="border-t border-gray-100 mx-4" />
-
                 {/* Public View Link */}
                 {user?.id === docOwnerId ? (
-                  <div className="px-4 py-3">
+                  <div className="px-4 py-3.5">
                     <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 rounded-lg bg-green-50 flex items-center justify-center">
-                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-50 flex items-center justify-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
                           </svg>
                         </div>
                         <div>
-                          <div className="text-sm font-semibold text-gray-800">Public View Link</div>
-                          <div className="text-xs text-gray-500">{isPublic ? 'Anyone with the link can view' : 'Only you can access'}</div>
+                          <div className="text-sm font-bold text-gray-800">Public View Link</div>
+                          <div className="text-[11px] text-gray-400 font-medium">{isPublic ? 'Anyone with link can view' : 'Only collaborators can access'}</div>
                         </div>
                       </div>
-                      {/* Toggle */}
+                      {/* Toggle Switch */}
                       <label className="relative inline-flex items-center cursor-pointer">
                         <input type="checkbox" className="sr-only" checked={isPublic} onChange={handlePublicToggle} />
-                        <div className={`w-10 h-6 rounded-full transition-colors ${isPublic ? 'bg-green-500' : 'bg-gray-300'}`}></div>
-                        <div className={`absolute left-1 top-1 bg-white w-4 h-4 rounded-full shadow transition-transform ${isPublic ? 'translate-x-4' : ''}`}></div>
+                        <div className={`w-9 h-5 rounded-full transition-colors duration-250 ${isPublic ? 'bg-emerald-500' : 'bg-gray-200'}`}></div>
+                        <div className={`absolute left-0.5 top-0.5 bg-white w-4 h-4 rounded-full shadow transition-transform duration-250 ${isPublic ? 'translate-x-4' : ''}`}></div>
                       </label>
                     </div>
                     {isPublic && (
-                      <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2 border border-gray-200">
-                        <span className="text-xs text-gray-500 flex-1 truncate">{window.location.origin}/public/{id}</span>
+                      <div className="flex items-center gap-2 bg-gray-50 rounded-lg px-2.5 py-2 border border-gray-150 mt-3 transition-all duration-300">
+                        <span className="text-[11px] font-medium text-gray-500 flex-1 truncate">{window.location.origin}/public/{id}</span>
                         <button
                           onClick={() => {
                             navigator.clipboard.writeText(`${window.location.origin}/public/${id}`);
+                            setCopied(true);
                             toast.success('Link copied!');
+                            setTimeout(() => setCopied(false), 2000);
                           }}
-                          className="text-xs font-semibold text-blue-600 hover:text-blue-800 whitespace-nowrap"
+                          className={`text-xs font-bold whitespace-nowrap transition-colors duration-200 ${copied ? 'text-emerald-600' : 'text-blue-600 hover:text-blue-700'}`}
                         >
-                          Copy
+                          {copied ? 'Copied!' : 'Copy'}
                         </button>
                       </div>
                     )}
                   </div>
                 ) : (
-                  <div className="px-4 py-3 flex items-center gap-3 opacity-50">
-                    <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <div className="px-4 py-3.5 flex items-center gap-3.5 opacity-55 bg-gray-50/50">
+                    <div className="w-9 h-9 rounded-lg bg-gray-150 flex items-center justify-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-4.5 w-4.5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
                       </svg>
                     </div>
-                    <div className="text-sm text-gray-500">Only the owner can share publicly</div>
+                    <div>
+                      <div className="text-sm font-semibold text-gray-700">View Link Disabled</div>
+                      <div className="text-[11px] text-gray-400 font-medium">Only the document owner can share</div>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1017,7 +1043,7 @@ export default function Editor() {
           <div className="mx-auto" style={{ maxWidth: 650 }}>
             <EditorContent
               editor={editor}
-              className="prose max-w-none text-left tiptap-editor min-h-[500px]"
+              className="prose max-w-none text-left tiptap-editor"
             />
             {editor && (
               <FormattingBubbleMenu 
