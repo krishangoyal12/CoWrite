@@ -1038,7 +1038,7 @@ export default function Editor() {
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-y-auto bg-[#f8f9fa] flex justify-center py-10 relative">
+      <div className="flex-1 overflow-y-auto bg-[#f8f9fa] flex justify-center items-start py-10 relative">
         <div className="bg-white max-w-[850px] w-full min-h-[1056px] shadow-sm border border-gray-200 rounded p-12 md:p-16 mb-20 relative">
           <div className="mx-auto" style={{ maxWidth: 650 }}>
             <EditorContent
