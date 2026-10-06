@@ -1,3 +1,5 @@
+const Groq = require('groq-sdk');
+
 const generateAIResponse = async (req, res) => {
   try {
     const { text, task, docHTML } = req.body;
@@ -5,7 +7,7 @@ const generateAIResponse = async (req, res) => {
     let basePrompt;
     switch (task) {
       case 'summarize_document':
-        basePrompt = `You are an expert summarizer. Review the following document and provide a concise, well-structured summary. The summary should capture the key points and main ideas.\n\nDOCUMENT:\n\n${text}`;
+        basePrompt = `You are an expert summarizer. Review the following document and provide a concise, well-structured summary. Start the output directly with <h3>Summary:</h3> followed by key takeaway paragraphs or bullet points capturing the main ideas.\n\nDOCUMENT:\n\n${text}`;
         break;
       case 'improve_document':
         basePrompt = `You are an expert editor. Review the following document and improve it. Fix any spelling and grammar mistakes, enhance clarity, and ensure it has a professional tone. Preserve the original structure (headings, paragraphs, lists, etc.) as much as possible.\n\nDOCUMENT:\n\n${text}`;
@@ -17,10 +19,21 @@ const generateAIResponse = async (req, res) => {
         basePrompt = `Summarize the following text as a list of concise bullet points.\n\nTEXT:\n\n${text}`;
         break;
       case 'grammar_check':
-        basePrompt = `Check the following text for grammar and spelling mistakes. Provide a corrected version, explaining the key changes made.\n\nTEXT:\n\n${text}`;
+        basePrompt = `Check the following text for grammar, spelling, and punctuation errors. Return ONLY the fully corrected document text preserving the original paragraphs and structure. Do NOT add notes, explanations, or commentary about what you changed.\n\nTEXT:\n\n${text}`;
         break;
       case 'ask_document':
         basePrompt = `Based on the provided document content, answer the following question. Provide the answer as a clear, concise paragraph.\n\nDOCUMENT:\n\n${docHTML}\n\n---\n\nQUESTION: ${text}`;
+        break;
+      case 'apply_critique':
+        basePrompt = `You are an expert document editor. Below is a document and a critique/improvement recommendations note.
+Apply the recommended corrections, enhancements, and fixes directly to the document. 
+Return ONLY the revised document text/HTML with the improvements applied. Do NOT output the critique itself, do NOT output explanations of what you changed, and do NOT include any introductory or concluding meta commentary.
+
+DOCUMENT:
+${docHTML || text}
+
+CRITIQUE & RECOMMENDATIONS TO APPLY:
+${text}`;
         break;
       case 'format_document':
         basePrompt = `You are an expert document formatter. Review the following document and apply professional formatting. This includes adding appropriate headings (h1, h2, h3), using bold for emphasis, creating bulleted or numbered lists where appropriate, and structuring the content for readability.\n\nDOCUMENT:\n\n${text}`;
@@ -29,41 +42,64 @@ const generateAIResponse = async (req, res) => {
         basePrompt = text;
     }
 
-    const instruction = "\n\nIMPORTANT: Your response must be only the raw HTML content for the result. Do not include any Markdown formatting (like ```, #, or *). Do not add any explanations, notes, or text outside of the final HTML content.";
+    const instruction = `
+
+FORMATTING REQUIREMENTS:
+- Output clean, standard HTML snippets only (e.g. <p>, <h2>, <h3>, <ul>, <ol>, <li>, <strong>, <em>).
+- Write seamlessly as native document prose. Do NOT write meta-introductions like "Here is the summary:", "Sure, here is your content:", or conversational greetings.
+- Do NOT over-bold every other word. Use <strong> only for legitimate sub-headers or key terms.
+- Use simple, clean paragraphs (<p>...</p>) without empty paragraphs or raw <br> spacers.
+- Do NOT include any Markdown tags, backticks (\`\`\`), or <!DOCTYPE>/<html>/<body> tags.`;
     const prompt = basePrompt + instruction;
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ message: 'AI API key not configured on server', success: false });
+      return res.status(500).json({ message: 'GROQ_API_KEY not configured on server', success: false });
     }
 
-    const model = 'gemini-flash-latest';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+    const groq = new Groq({ apiKey });
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 4096,
-          topP: 0.8,
-          topK: 40
+    // Fallback models in priority order for free-tier resilience
+    const candidateModels = [
+      process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+      'openai/gpt-oss-20b',
+      'qwen/qwen3.8-27b'
+    ].filter((m, i, arr) => arr.indexOf(m) === i);
+
+    let completion = null;
+    let lastError = null;
+
+    for (const model of candidateModels) {
+      try {
+        completion = await groq.chat.completions.create({
+          messages: [
+            {
+              role: 'system',
+              content: 'You are an invisible, expert document ghostwriter and editor integrated into a collaborative rich-text editor. Your goal is to write natural, eloquent, professional document prose that matches the formatting and flow of a human-written document. Never introduce your response or include meta commentary. Directly produce the document content in clean, semantic HTML.'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          model: model,
+          temperature: 0.5,
+          max_tokens: 3000
+        });
+        if (completion?.choices?.[0]?.message?.content) {
+          break;
         }
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'Failed to get response from AI');
+      } catch (err) {
+        console.warn(`[Groq] Model ${model} failed, attempting next fallback... Reason:`, err.message);
+        lastError = err;
+      }
     }
 
-    const data = await response.json();
-    let result = data.candidates[0].content.parts[0].text;
+    if (!completion?.choices?.[0]?.message?.content) {
+      throw lastError || new Error('All AI models failed to generate response');
+    }
+
+    let result = completion.choices[0].message.content || '';
 
     result = result.replace(/^```html\s*([\s\S]*?)```$/im, '$1')
       .replace(/^```\s*([\s\S]*?)```$/im, '$1')

@@ -72,10 +72,13 @@ export const AIDropdownMenu = ({ editor, closeMenu }) => {
     };
   }, [closeMenu]);
 
-  // Auto-focus textarea when shown
+  // Auto-focus textarea and scroll it into view when shown
   useEffect(() => {
     if (showPromptInput && promptRef.current) {
       promptRef.current.focus();
+      if (inputWrapperRef.current) {
+        inputWrapperRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
     }
   }, [showPromptInput]);
 
@@ -111,18 +114,24 @@ export const AIDropdownMenu = ({ editor, closeMenu }) => {
   };
 
   return (
-    // Main container for positioning, background, and border.
-    <div className="absolute z-50 mt-2 w-80 bg-white border border-gray-200 rounded-lg shadow-xl">
-      {/* Fixed height to ensure it fits on all screens and scrolls properly */}
-      <div className="max-h-[320px] overflow-y-auto p-2">
+    // Main container for positioning, background, and border
+    <div
+      style={{ width: "340px", minWidth: "320px" }}
+      className="absolute left-0 top-full z-50 mt-2 bg-white border border-gray-200 rounded-xl shadow-2xl overflow-hidden"
+    >
+      {/* Scrollable list container */}
+      <div
+        style={{ maxHeight: "calc(100vh - 160px)" }}
+        className="overflow-y-auto p-2"
+      >
         <ul className="flex flex-col gap-1">
           {menuItems.map((item, index) => (
             <li key={index}>
               <button
                 onClick={() => handleItemClick(item.command)}
-                className="w-full flex items-center gap-3 text-left p-2 rounded-md hover:bg-blue-50 transition-colors"
+                className="w-full flex items-center gap-3 text-left p-2.5 rounded-lg hover:bg-blue-50/70 transition-colors group"
               >
-                <div className="text-blue-600 text-xl">{item.icon}</div>
+                <div className="text-blue-600 text-lg group-hover:scale-110 transition-transform">{item.icon}</div>
                 <div>
                   <p className="font-semibold text-sm text-gray-800">
                     {item.label}
@@ -132,15 +141,20 @@ export const AIDropdownMenu = ({ editor, closeMenu }) => {
               </button>
             </li>
           ))}
-          <li>
+
+          {/* Visual Divider separating one-click tools from interactive custom generator */}
+          <li className="my-1.5 border-t border-gray-150" />
+
+          {/* Generate Content (Interactive Custom Prompt) */}
+          <li className={showPromptInput ? "bg-blue-50/40 rounded-lg p-1.5 border border-blue-100/80" : ""}>
             <button
               onClick={() => setShowPromptInput((v) => !v)}
-              className="w-full flex items-center gap-3 text-left p-2 rounded-md hover:bg-blue-50 transition-colors"
+              className="w-full flex items-center gap-3 text-left p-2 rounded-lg hover:bg-blue-50 transition-colors group"
             >
-              <div className="text-blue-600 text-xl">
+              <div className="text-blue-600 text-lg group-hover:scale-110 transition-transform">
                 <LuPlus />
               </div>
-              <div>
+              <div className="flex-1">
                 <p className="font-semibold text-sm text-gray-800">
                   Generate Content
                 </p>
@@ -151,14 +165,14 @@ export const AIDropdownMenu = ({ editor, closeMenu }) => {
             </button>
             {showPromptInput && (
               <div
-                className="mt-2 flex flex-col gap-2 px-2"
+                className="mt-2.5 flex flex-col gap-2.5 px-2 pb-2"
                 ref={inputWrapperRef}
               >
                 <textarea
                   ref={promptRef}
                   rows={3}
-                  className="border rounded px-2 py-1 text-sm w-full resize-none focus:outline-blue-400"
-                  placeholder="Enter your prompt..."
+                  className="w-full text-sm border border-gray-200 rounded-lg p-2.5 focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all outline-none resize-none bg-white placeholder-gray-400 text-gray-800"
+                  placeholder="Enter your prompt (e.g. Write an introduction about...)"
                   value={customPrompt}
                   onChange={(e) => setCustomPrompt(e.target.value)}
                   onKeyDown={(e) => {
@@ -170,25 +184,24 @@ export const AIDropdownMenu = ({ editor, closeMenu }) => {
                   }}
                   disabled={loading}
                 />
-                <div className="flex gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={handleGenerateContent}
-                    className="bg-blue-600 text-white px-3 py-1 rounded text-sm"
+                    className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-medium px-3.5 py-1.5 rounded-lg text-sm shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                     disabled={loading || !customPrompt.trim()}
                   >
                     {loading ? "Generating..." : "Generate"}
                   </button>
                   <button
                     onClick={() => setShowPromptInput(false)}
-                    className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm"
+                    className="bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-700 font-medium px-3.5 py-1.5 rounded-lg text-sm transition-all"
                     disabled={loading}
                   >
                     Cancel
                   </button>
                 </div>
-                <span className="text-xs text-gray-400">
-                  Press <b>Enter</b> to generate, <b>Shift+Enter</b> for new
-                  line.
+                <span className="text-[11px] text-gray-400">
+                  Press <b>Enter</b> to generate, <b>Shift+Enter</b> for new line.
                 </span>
               </div>
             )}

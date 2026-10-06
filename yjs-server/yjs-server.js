@@ -27,10 +27,8 @@ const mdb = new MongodbPersistence({ client, db }, {
 
 setPersistence({
   bindState: async (docName, ydoc) => {
-    console.log(`[Yjs] bindState called for doc: ${docName}`);
     try {
       const persistedYdoc = await mdb.getYDoc(docName);
-      console.log(`[Yjs] loaded doc ${docName} from DB successfully`);
       const newUpdates = Y.encodeStateAsUpdate(ydoc);
       await mdb.storeUpdate(docName, newUpdates);
       Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));

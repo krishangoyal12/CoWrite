@@ -1,7 +1,7 @@
 import { Extension } from '@tiptap/core';
 import toast from 'react-hot-toast';
 
-async function callGeminiAI(text, task, docHTML = "") {
+async function callAI(text, task, docHTML = "") {
   const url = `${import.meta.env.VITE_URL}/api/ai/generate`;
 
   const token = localStorage.getItem("token");
@@ -49,16 +49,23 @@ export const AIExtension = Extension.create({
 
         const insertPos = task === 'ask_document' ? editor.state.doc.content.size : from;
 
-        const apiKey = this.options.apiKey;
         const docHTML = task === 'ask_document' ? editor.getHTML() : "";
         
         toast.loading(task === 'ask_document' ? 'AI is answering...' : 'AI is generating content...', { id: 'ai-global' });
 
-        callGeminiAI(text, task, docHTML)
+        callAI(text, task, docHTML)
           .then(result => {
             toast.success('Done!', { id: 'ai-global' });
+            const startPos = insertPos;
             const htmlResult = `<span class="ai-highlight-fade">${result}</span>`;
-            editor.chain().focus().insertContentAt(insertPos, htmlResult).run();
+            
+            // Insert content and focus right at the start of the inserted text (top)
+            editor
+              .chain()
+              .insertContentAt(startPos, htmlResult)
+              .setTextSelection(startPos)
+              .scrollIntoView()
+              .run();
             
             setTimeout(() => {
               if (editor.isDestroyed) return;
@@ -83,12 +90,17 @@ export const AIExtension = Extension.create({
       summarizeDocument: () => ({ editor }) => {
         const originalContent = editor.getHTML();
         toast.loading('AI is summarizing...', { id: 'ai-global' });
-        const apiKey = this.options.apiKey;
-        callGeminiAI(originalContent, 'summarize_document')
+        callAI(originalContent, 'summarize_document')
           .then(result => {
             toast.success('Summary complete!', { id: 'ai-global' });
-            // Insert summary at the end of the document
-            editor.chain().focus().insertContentAt(editor.state.doc.content.size, "\n\n" + result).run();
+            const startPos = editor.state.doc.content.size;
+            // Insert summary and scroll/set cursor to the start of the summary
+            editor
+              .chain()
+              .insertContentAt(startPos, result)
+              .setTextSelection(startPos)
+              .scrollIntoView()
+              .run();
           })
           .catch(error => {
             toast.error(`Summarization failed: ${error.message}`, { id: 'ai-global' });
@@ -99,11 +111,10 @@ export const AIExtension = Extension.create({
       improveDocument: () => ({ editor }) => {
         const originalContent = editor.getHTML();
         toast.loading('AI is improving the document...', { id: 'ai-global' });
-        const apiKey = this.options.apiKey;
-        callGeminiAI(originalContent, 'improve_document')
+        callAI(originalContent, 'improve_document')
           .then(result => {
             toast.success('Document improved!', { id: 'ai-global' });
-            editor.commands.setContent(result, true);
+            editor.chain().setContent(result, true).setTextSelection(0).scrollIntoView().run();
           })
           .catch(error => {
             toast.error(`Improvement failed: ${error.message}`, { id: 'ai-global' });
@@ -114,11 +125,10 @@ export const AIExtension = Extension.create({
       changeTone: (tone) => ({ editor }) => {
         const originalContent = editor.getHTML();
         toast.loading(`AI is changing tone to ${tone}...`, { id: 'ai-global' });
-        const apiKey = this.options.apiKey;
-        callGeminiAI(originalContent, `change_tone_${tone}`)
+        callAI(originalContent, `change_tone_${tone}`)
           .then(result => {
             toast.success('Tone changed!', { id: 'ai-global' });
-            editor.commands.setContent(result, true);
+            editor.chain().setContent(result, true).setTextSelection(0).scrollIntoView().run();
           })
           .catch(error => {
             toast.error(`Failed to change tone: ${error.message}`, { id: 'ai-global' });
@@ -129,11 +139,10 @@ export const AIExtension = Extension.create({
       formatDocument: () => ({ editor }) => {
         const originalContent = editor.getHTML();
         toast.loading('AI is formatting the document...', { id: 'ai-global' });
-        const apiKey = this.options.apiKey;
-        callGeminiAI(originalContent, 'format_document')
+        callAI(originalContent, 'format_document')
           .then(result => {
             toast.success('Document formatted!', { id: 'ai-global' });
-            editor.commands.setContent(result, true);
+            editor.chain().setContent(result, true).setTextSelection(0).scrollIntoView().run();
           })
           .catch(error => {
             toast.error(`Formatting failed: ${error.message}`, { id: 'ai-global' });
@@ -143,14 +152,20 @@ export const AIExtension = Extension.create({
 
       bulletSummary: () => ({ editor }) => {
         const fullText = editor.state.doc.textContent;
-        const apiKey = this.options.apiKey;
         toast.loading('Creating bullet summary...', { id: 'ai-global' });
         
-        callGeminiAI(fullText, 'bullet_summary')
+        callAI(fullText, 'bullet_summary')
           .then(result => {
             toast.success('Summary created!', { id: 'ai-global' });
-            const htmlResult = `<span class="ai-highlight-fade"><br><br>${result.replace(/\n/g, '<br>')}</span>`;
-            editor.chain().focus().insertContentAt(editor.state.doc.content.size, htmlResult).run();
+            const startPos = editor.state.doc.content.size;
+            const htmlResult = `<span class="ai-highlight-fade">${result}</span>`;
+            
+            editor
+              .chain()
+              .insertContentAt(startPos, htmlResult)
+              .setTextSelection(startPos)
+              .scrollIntoView()
+              .run();
             
             setTimeout(() => {
               if (editor.isDestroyed) return;
@@ -172,14 +187,20 @@ export const AIExtension = Extension.create({
 
       grammarCheck: () => ({ editor }) => {
         const fullText = editor.state.doc.textContent;
-        const apiKey = this.options.apiKey;
         toast.loading('Checking grammar...', { id: 'ai-global' });
 
-        callGeminiAI(fullText, 'grammar_check')
+        callAI(fullText, 'grammar_check')
           .then(result => {
             toast.success('Grammar checked!', { id: 'ai-global' });
-            const htmlResult = `<span class="ai-highlight-fade"><br><br>${result.replace(/\n/g, '<br>')}</span>`;
-            editor.chain().focus().insertContentAt(editor.state.doc.content.size, htmlResult).run();
+            const startPos = editor.state.doc.content.size;
+            const htmlResult = `<span class="ai-highlight-fade">${result}</span>`;
+            
+            editor
+              .chain()
+              .insertContentAt(startPos, htmlResult)
+              .setTextSelection(startPos)
+              .scrollIntoView()
+              .run();
             
             setTimeout(() => {
               if (editor.isDestroyed) return;

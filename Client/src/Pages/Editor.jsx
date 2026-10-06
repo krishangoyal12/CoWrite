@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -9,11 +9,16 @@ import Color from "@tiptap/extension-color";
 import FontStyle from "../Extensions/FontStyle";
 import { AiHighlight } from "../Extensions/AiHighlight";
 import { AIExtension } from "../Extensions/AIExtension";
+import { EditorShortcuts } from "../Extensions/EditorShortcuts";
+import { SlashCommands } from "../Extensions/SlashCommands";
+import { AIPreviewBubble } from "../Components/AIPreviewBubble";
+import { AskDocSidebar } from "../Components/AskDocSidebar";
+
 import { AIBubbleMenu } from "../../Components/AIBubbleMenu";
 import { AIDropdownMenu } from "../../Components/AIDropdownMenu";
 import toast from "react-hot-toast";
 import { FiBold, FiItalic, FiRotateCcw, FiRotateCw } from "react-icons/fi";
-import { LuSparkles, LuCircleHelp } from "react-icons/lu";
+import { LuSparkles, LuCircleHelp, LuUserPlus, LuUsers } from "react-icons/lu";
 import { MdColorize } from "react-icons/md";
 import { MdFormatStrikethrough, MdFormatUnderlined } from "react-icons/md";
 import { BiHeading } from "react-icons/bi";
@@ -32,7 +37,6 @@ import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import { useAuth } from "../../Context/useAuth";
 import { CommentExtension } from "../Extensions/CommentExtension";
 import { CommentThread, CommentBubble } from "../../Components/CommentPanel";
-import { CollaboratorBar } from "../Components/CollaboratorBar";
 
 const COLOR_GRID = [
   "#000000",
@@ -128,7 +132,7 @@ function getUserColor(userIdOrEmail) {
 }
 
 function NewCommentBoxInline({ onCancel, onSave }) {
-  const [text, setText] = React.useState('');
+  const [text, setText] = useState('');
   return (
     <div className="bg-white border rounded-lg shadow-lg p-4 w-80">
       <textarea
@@ -184,8 +188,10 @@ export default function Editor() {
   const [adding, setAdding] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const exportMenuRef = useRef(null);
+  const shareModalRef = useRef(null);
 
   const [ydoc] = useState(() => new Y.Doc());
   const [provider] = useState(
@@ -249,9 +255,11 @@ export default function Editor() {
           color: getUserColor(user?.id || user?.email || "guest"),
         },
       }),
-      AIExtension.configure({ apiKey: import.meta.env.VITE_GEMINI_API_KEY }),
+      AIExtension,
       AiHighlight,
       CommentExtension,
+      EditorShortcuts,
+      SlashCommands,
     ],
     autofocus: true,
     editable: !loading,
@@ -498,6 +506,18 @@ export default function Editor() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showExportMenu]);
 
+  // Close share popover on outside click
+  useEffect(() => {
+    if (!showShareModal) return;
+    const handler = (e) => {
+      if (shareModalRef.current && !shareModalRef.current.contains(e.target)) {
+        setShowShareModal(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showShareModal]);
+
   const handleHeadingChange = (e) => {
     const value = e.target.value;
     setHeadingLevel(value);
@@ -586,7 +606,7 @@ export default function Editor() {
   }, [showAskDocInput]);
 
   const handleAskDoc = () => {
-    if (!askDocPrompt.trim()) return;
+    if (!askDocPrompt.trim() || !editor) return;
     editor.commands.generateText({
       task: "ask_document",
       prompt: askDocPrompt,
@@ -595,67 +615,395 @@ export default function Editor() {
     setAskDocPrompt("");
   };
 
+  const [aiBubble, setAiBubble] = useState({
+    isOpen: false,
+    task: null,
+    result: "",
+    loading: false,
+    targetScope: "upstream",
+    insertPos: 0,
+    replaceFrom: null,
+    replaceTo: null,
+    inputText: "",
+    isPromptInput: false,
+  });
+  const [aiCustomPrompt, setAiCustomPrompt] = useState("");
+
+  const triggerAIOperation = async ({ task, inputText, targetScope, insertPos, replaceFrom, replaceTo }) => {
+    setAiBubble({
+      isOpen: true,
+      task,
+      result: "",
+      loading: true,
+      targetScope,
+      insertPos,
+      replaceFrom,
+      replaceTo,
+      inputText,
+      isPromptInput: false,
+    });
+
+    try {
+      const url = `${import.meta.env.VITE_URL}/api/ai/generate`;
+      const token = localStorage.getItem("token");
+      const headers = { "Content-Type": "application/json" };
+      if (token) headers["Authorization"] = `Bearer ${token}`;
+
+      const res = await fetch(url, {
+        method: "POST",
+        credentials: "include",
+        headers,
+        body: JSON.stringify({
+          text: inputText,
+          task,
+          docHTML: editor ? editor.getHTML() : "",
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || data.message || "Failed to generate AI response");
+      }
+
+      let formattedResult = data.data || "";
+      if (task === "summarize_document" && formattedResult) {
+        // Ensure standard heading appears at the top of the summary if model omitted it
+        if (!/^\s*<h[1-3][^>]*>.*Summary/i.test(formattedResult)) {
+          formattedResult = `<h3>Summary:</h3>\n${formattedResult}`;
+        }
+      }
+
+      setAiBubble((prev) => ({
+        ...prev,
+        result: formattedResult,
+        loading: false,
+      }));
+    } catch (err) {
+      toast.error(err.message || "AI generation failed");
+      setAiBubble((prev) => ({
+        ...prev,
+        loading: false,
+      }));
+    }
+  };
+
+  useEffect(() => {
+    const handleAISlashCommand = (e) => {
+      if (!editor) return;
+      const { task, range } = e.detail;
+
+      const { state } = editor;
+      const { selection } = state;
+      const hasSelection = !selection.empty;
+
+      let inputText = "";
+      let targetScope = "upstream";
+      let replaceFrom = null;
+      let replaceTo = null;
+      let insertPos = range ? range.from : selection.from;
+
+      if (hasSelection) {
+        targetScope = "selection";
+        inputText = state.doc.textBetween(selection.from, selection.to, "\n\n");
+        replaceFrom = selection.from;
+        replaceTo = selection.to;
+      } else {
+        targetScope = "upstream";
+        const cursorPosition = range ? range.from : selection.from;
+        inputText = state.doc.textBetween(0, cursorPosition, "\n\n");
+        replaceFrom = 0;
+        replaceTo = cursorPosition;
+      }
+
+      if (task === "prompt_generate") {
+        setAiBubble({
+          isOpen: true,
+          task: "generate",
+          result: "",
+          loading: false,
+          targetScope,
+          insertPos,
+          replaceFrom: null,
+          replaceTo: null,
+          inputText: "",
+          isPromptInput: true,
+        });
+        setAiCustomPrompt("");
+        return;
+      }
+
+      if (!inputText.trim()) {
+        toast("Write some content first to use this command", { icon: "ℹ️" });
+        return;
+      }
+
+      triggerAIOperation({
+        task,
+        inputText,
+        targetScope,
+        insertPos,
+        replaceFrom: task === "improve_document" || task === "grammar_check" ? replaceFrom : null,
+        replaceTo: task === "improve_document" || task === "grammar_check" ? replaceTo : null,
+      });
+    };
+
+    window.addEventListener("cowrite:ai-slash-command", handleAISlashCommand);
+    return () => {
+      window.removeEventListener("cowrite:ai-slash-command", handleAISlashCommand);
+    };
+  }, [editor]);
+
+  const handleAiBubbleAccept = () => {
+    if (!editor || !aiBubble.result) return;
+
+    if (
+      (aiBubble.task === "improve_document" || aiBubble.task === "grammar_check") &&
+      aiBubble.replaceFrom !== null &&
+      aiBubble.replaceTo !== null
+    ) {
+      editor
+        .chain()
+        .focus()
+        .deleteRange({ from: aiBubble.replaceFrom, to: aiBubble.replaceTo })
+        .insertContentAt(aiBubble.replaceFrom, aiBubble.result)
+        .run();
+    } else {
+      const pos = aiBubble.insertPos != null ? aiBubble.insertPos : editor.state.selection.from;
+      editor
+        .chain()
+        .focus()
+        .insertContentAt(pos, aiBubble.result)
+        .run();
+    }
+
+    setAiBubble((prev) => ({ ...prev, isOpen: false }));
+    toast.success("Content updated!");
+  };
+
+  const handleAiBubbleDiscard = () => {
+    setAiBubble((prev) => ({ ...prev, isOpen: false, isPromptInput: false }));
+  };
+
+  const handleAiBubbleRegenerate = () => {
+    if (!aiBubble.task || !aiBubble.inputText) return;
+    triggerAIOperation({
+      task: aiBubble.task,
+      inputText: aiBubble.inputText,
+      targetScope: aiBubble.targetScope,
+      insertPos: aiBubble.insertPos,
+      replaceFrom: aiBubble.replaceFrom,
+      replaceTo: aiBubble.replaceTo,
+    });
+  };
+
+  const handlePromptSubmit = (e) => {
+    e.preventDefault();
+    if (!aiCustomPrompt.trim()) return;
+    triggerAIOperation({
+      task: "generate",
+      inputText: aiCustomPrompt,
+      targetScope: "cursor",
+      insertPos: aiBubble.insertPos,
+      replaceFrom: null,
+      replaceTo: null,
+    });
+  };
+
   return (
     <div className="fixed inset-0 bg-gray-100 z-50 flex flex-col">
-      <CollaboratorBar 
-        collaboratorEmail={collaboratorEmail}
-        setCollaboratorEmail={setCollaboratorEmail}
-        adding={adding}
-        handleAddCollaborator={handleAddCollaborator}
-        collaborators={collaborators}
-        currentUser={user}
-      />
+      <div className="flex items-center justify-between bg-white px-6 py-2.5 shadow-sm h-16 border-b border-gray-200">
+        {/* Left: Branding & Document Title */}
+        <div className="flex items-center gap-4 flex-1 min-w-0 mr-4">
+          <div 
+            className="flex items-center gap-2.5 select-none cursor-pointer flex-shrink-0"
+            onClick={() => navigate("/dashboard")}
+          >
+            <img src="/logo.png" alt="CoWrite Logo" className="w-9 h-9 object-contain" />
+            <span className="text-2xl font-extrabold text-blue-700 tracking-tight hover:opacity-85 transition-opacity hidden sm:inline">
+              CoWrite
+            </span>
+          </div>
 
-      <div className="flex items-center bg-white px-8 py-3 shadow h-16 border-b border-gray-200">
-        <div 
-          className="flex items-center gap-3 select-none cursor-pointer"
-          onClick={() => navigate("/dashboard")}
-        >
-          <img src="/logo.png" alt="CoWrite Logo" className="w-10 h-10" />
-          <span className="text-2xl font-extrabold text-blue-700 tracking-wide hover:opacity-80 transition-opacity">
-            CoWrite
-          </span>
+          <div className="h-6 w-px bg-gray-200 hidden sm:block flex-shrink-0 mx-1"></div>
+
+          <div className="flex-1 max-w-xl min-w-[160px]">
+            {user?.id === docOwnerId ? (
+              <input
+                type="text"
+                value={docTitle}
+                onChange={(e) => setDocTitle(e.target.value)}
+                className="bg-transparent text-lg font-semibold text-gray-800 hover:bg-gray-50 focus:bg-white rounded-md border border-transparent focus:border-blue-400 outline-none px-2.5 py-1 w-full transition-colors truncate"
+                placeholder="Untitled Document"
+              />
+            ) : (
+              <input
+                type="text"
+                value={docTitle}
+                disabled
+                className="bg-transparent text-lg font-semibold text-gray-700 px-2.5 py-1 w-full opacity-80 cursor-not-allowed truncate"
+                readOnly
+                tabIndex={-1}
+                aria-label="Document Title (read only)"
+              />
+            )}
+          </div>
         </div>
-        <div className="ml-8 flex-1">
-          {user?.id === docOwnerId ? (
-            <input
-              type="text"
-              value={docTitle}
-              onChange={(e) => setDocTitle(e.target.value)}
-              className="bg-transparent text-xl font-semibold text-gray-800 border-b border-gray-200 focus:border-blue-500 outline-none px-2 py-1 w-full max-w-lg"
-              placeholder="Document Title"
-            />
-          ) : (
-            <input
-              type="text"
-              value={docTitle}
-              disabled
-              className="bg-transparent text-xl font-semibold text-gray-800 border-b border-gray-200 px-2 py-1 w-full max-w-lg opacity-70 cursor-not-allowed"
-              readOnly
-              tabIndex={-1}
-              aria-label="Document Title (read only)"
-            />
+
+        {/* Right: Collaborators, Share, Doc Copilot, Export, Save */}
+        <div className="flex items-center gap-2.5 flex-shrink-0">
+          {/* Active Live Awareness Avatars */}
+          {awarenessUsers.length > 0 && (
+            <div className="flex -space-x-2 mr-2" title="Currently viewing this document">
+              {awarenessUsers.map((u, idx) => (
+                <div 
+                  key={idx}
+                  className="w-8 h-8 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold shadow-sm relative group cursor-pointer hover:z-10 transition-transform hover:scale-110"
+                  style={{ backgroundColor: u.color }}
+                >
+                  {u.name.charAt(0).toUpperCase()}
+                  <div className="absolute top-9 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-md">
+                    {u.name} (viewing)
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
-        </div>
 
-        {awarenessUsers.length > 0 && (
-          <div className="flex -space-x-2 mr-4" title="Currently viewing this document">
-            {awarenessUsers.map((u, idx) => (
-              <div 
-                key={idx}
-                className="w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-white text-xs font-bold shadow-sm relative group cursor-pointer hover:z-10 transition-transform hover:scale-110"
-                style={{ backgroundColor: u.color }}
-              >
-                {u.name.charAt(0).toUpperCase()}
-                <div className="absolute top-10 left-1/2 transform -translate-x-1/2 bg-gray-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50">
-                  {u.name}
+          {/* Share Button & Popover */}
+          <div className="relative" ref={shareModalRef}>
+            <button
+              onClick={() => setShowShareModal((v) => !v)}
+              className={`px-3.5 py-2 rounded-lg font-semibold flex items-center gap-2 border text-sm transition-all duration-200 active:scale-95 shadow-xs ${
+                showShareModal
+                  ? "bg-blue-50 text-blue-700 border-blue-300 ring-2 ring-blue-500/20"
+                  : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
+              }`}
+              title="Share document and manage collaborators"
+            >
+              <LuUserPlus className="text-blue-600 text-base" />
+              <span>Share</span>
+              {collaborators.length > 1 && (
+                <span className="ml-0.5 bg-blue-100 text-blue-700 text-[11px] font-bold px-1.5 py-0.5 rounded-full leading-none">
+                  {collaborators.length}
+                </span>
+              )}
+            </button>
+
+            {showShareModal && (
+              <div className="absolute right-0 top-full mt-2 w-96 bg-white border border-gray-200 rounded-2xl shadow-2xl z-50 overflow-hidden p-5 animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                      <LuUsers className="text-lg" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 leading-tight">Share Document</h4>
+                      <p className="text-[12px] text-gray-500">Invite teammates to collaborate in real-time</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invite Email Form */}
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!collaboratorEmail || adding) return;
+                    handleAddCollaborator();
+                  }}
+                  className="flex gap-2 mb-4"
+                >
+                  <input
+                    type="email"
+                    value={collaboratorEmail}
+                    onChange={(e) => setCollaboratorEmail(e.target.value)}
+                    placeholder="Enter collaborator's email"
+                    className="flex-1 border border-gray-200 px-3.5 py-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-2xs"
+                    disabled={adding}
+                  />
+                  <button
+                    type="submit"
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-xs active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap"
+                    disabled={adding || !collaboratorEmail}
+                  >
+                    {adding ? "Adding..." : "Add"}
+                  </button>
+                </form>
+
+                {/* Collaborators List */}
+                <div className="border-t border-gray-100 pt-3">
+                  <div className="text-[12px] font-semibold text-gray-500 mb-2 flex items-center justify-between">
+                    <span>Collaborators with access</span>
+                    <span className="text-gray-400 font-normal">
+                      {collaborators.length} {collaborators.length === 1 ? "member" : "members"}
+                    </span>
+                  </div>
+                  
+                  <div className="max-h-52 overflow-y-auto space-y-1.5 pr-1">
+                    {collaborators.length === 0 ? (
+                      <p className="text-xs text-gray-400 italic py-2 text-center">No other collaborators yet</p>
+                    ) : (
+                      collaborators.map((c) => {
+                        const cId = typeof c === "object" && c._id ? c._id : c;
+                        const cName = typeof c === "object" ? c.name || c.username || c.email : c;
+                        const cEmail = typeof c === "object" ? c.email : "";
+                        const isOwner = cId === docOwnerId;
+                        const isYou = cId === user?.id || (cEmail && cEmail === user?.email);
+
+                        return (
+                          <div
+                            key={cId}
+                            className="flex items-center justify-between px-2.5 py-2 rounded-xl hover:bg-gray-50 transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className="w-7 h-7 rounded-full text-white flex items-center justify-center text-xs font-bold shadow-2xs flex-shrink-0"
+                                style={{ backgroundColor: getUserColor(cId || cEmail || cName) }}
+                              >
+                                {String(cName || "U").charAt(0).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-medium text-gray-800 truncate flex items-center gap-1.5">
+                                  <span>{cName}</span>
+                                  {isYou && (
+                                    <span className="text-[10px] text-gray-400 font-normal">(you)</span>
+                                  )}
+                                </div>
+                                {cEmail && cEmail !== cName && (
+                                  <div className="text-[11px] text-gray-400 truncate">{cEmail}</div>
+                                )}
+                              </div>
+                            </div>
+                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                              isOwner
+                                ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                : "bg-blue-50 text-blue-600 border border-blue-100"
+                            }`}>
+                              {isOwner ? "Owner" : "Editor"}
+                            </span>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
-            ))}
+            )}
           </div>
-        )}
 
-        <div className="flex gap-2 ml-4 items-center">
+          {/* Doc Copilot Toggle Button */}
+          <button
+            onClick={() => setShowAskDocInput((v) => !v)}
+            className={`px-3.5 py-2 rounded-lg transition-all duration-200 font-semibold flex items-center gap-2 border text-sm shadow-xs ${
+              showAskDocInput
+                ? "bg-blue-50 text-blue-700 border-blue-300 shadow-sm ring-2 ring-blue-500/20"
+                : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50 hover:text-gray-900"
+            }`}
+            title="Toggle Doc Copilot"
+          >
+            <LuSparkles className={`text-sm ${showAskDocInput ? "text-blue-600 animate-pulse" : "text-blue-600"}`} />
+            <span>Doc Copilot</span>
+          </button>
+
           {/* Export / Share dropdown */}
           <div className="relative" ref={exportMenuRef}>
             <button
@@ -982,51 +1330,6 @@ export default function Editor() {
         >
           <MdFormatUnderlined />
         </button>
-        <button
-          onClick={() => setShowAskDocInput((v) => !v)}
-          className="p-2 rounded transition text-xl flex items-center justify-center bg-white text-gray-700 hover:bg-blue-50"
-          title="Ask Document"
-        >
-          <LuCircleHelp />
-        </button>
-        {showAskDocInput && (
-          <div
-            className="absolute left-1/2 transform -translate-x-1/2 mt-16 bg-white border rounded shadow p-2 z-50 flex flex-col gap-2"
-            style={{ minWidth: 320 }}
-          >
-            <input
-              ref={askDocInputRef}
-              type="text"
-              className="border rounded px-2 py-1 text-sm w-full"
-              placeholder="Ask a question about this document..."
-              value={askDocPrompt}
-              onChange={(e) => setAskDocPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleAskDoc();
-                if (e.key === "Escape") setShowAskDocInput(false);
-              }}
-              autoFocus
-            />
-            <div className="flex gap-2">
-              <button
-                onClick={handleAskDoc}
-                className="bg-blue-600 text-white px-3 py-1 rounded text-sm"
-                disabled={!askDocPrompt.trim()}
-              >
-                Ask
-              </button>
-              <button
-                onClick={() => setShowAskDocInput(false)}
-                className="bg-gray-200 text-gray-700 px-3 py-1 rounded text-sm"
-              >
-                Cancel
-              </button>
-            </div>
-            <span className="text-xs text-gray-400">
-              Press <b>Enter</b> to ask, <b>Esc</b> to cancel.
-            </span>
-          </div>
-        )}
       </div>
 
       {/* Loading overlay — sits on top but editor stays mounted so Yjs can sync */}
@@ -1038,61 +1341,151 @@ export default function Editor() {
           </div>
         </div>
       )}
-      <div className="flex-1 overflow-y-auto bg-[#f8f9fa] flex justify-center items-start py-10 relative">
-        <div className="bg-white max-w-[850px] w-full min-h-[1056px] shadow-sm border border-gray-200 rounded p-12 md:p-16 mb-20 relative">
-          <div className="mx-auto" style={{ maxWidth: 650 }}>
-            <EditorContent
-              editor={editor}
-              className="prose max-w-none text-left tiptap-editor"
-            />
-            {editor && (
-              <FormattingBubbleMenu 
-                editor={editor} 
-                onAddComment={() => {
-                  const { from, to } = editor.state.selection;
-                  if (from !== to) {
-                    setDraftComment({ from, to });
+      {/* Main Content Area: Editor Canvas + Side Copilot Panel */}
+      <div className="flex-1 flex overflow-hidden relative">
+        {/* Scrollable Document Canvas */}
+        <div className="flex-1 overflow-y-auto bg-[#f8f9fa] flex justify-center items-start py-8 relative">
+          <div className="bg-white max-w-[1000px] w-full min-h-[1056px] shadow-sm border border-gray-200 rounded-lg p-8 md:p-12 mb-20 relative">
+            <div className="mx-auto w-full" style={{ maxWidth: 860 }}>
+              <EditorContent
+                editor={editor}
+                className="prose max-w-none text-left text-black tiptap-editor"
+              />
+              {editor && (
+                <FormattingBubbleMenu 
+                  editor={editor} 
+                  onAddComment={() => {
+                    const { from, to } = editor.state.selection;
+                    if (from !== to) {
+                      setDraftComment({ from, to });
+                    }
+                  }}
+                />
+              )}
+            </div>
+          </div>
+
+          {/* Floating Right Margin Comments */}
+          {(activeComment || draftComment) && (
+            <div 
+              className="comment-thread-container fixed z-40 transition-all duration-200 ease-out"
+              style={{ 
+                top: Math.max(130, commentTop), 
+                right: showAskDocInput 
+                  ? 'max(20px, calc(50vw - 500px - 320px + 180px))'
+                  : 'max(20px, calc(50vw - 500px - 320px))'
+              }}
+            >
+              {draftComment ? (
+                <NewCommentBoxInline 
+                  onCancel={() => setDraftComment(null)}
+                  onSave={(text) => {
+                    editor.commands.addComment({
+                      text,
+                      from: draftComment.from,
+                      to: draftComment.to,
+                      userId: user?.id,
+                      userName: user?.name || 'Anonymous'
+                    });
+                    setDraftComment(null);
+                    toast.success("Comment added");
+                  }}
+                />
+              ) : (
+                <CommentThread 
+                  comment={activeComment}
+                  editor={editor}
+                  onClose={() => setActiveComment(null)}
+                />
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* VS Code Copilot-Style Side Panel */}
+        <AskDocSidebar
+          isOpen={showAskDocInput}
+          onClose={() => setShowAskDocInput(false)}
+          editor={editor}
+        />
+      </div>
+
+      {/* Interactive AI Preview Bubble */}
+      {aiBubble.isOpen && !aiBubble.isPromptInput && (
+        <AIPreviewBubble
+          task={aiBubble.task}
+          originalText={aiBubble.inputText}
+          result={aiBubble.result}
+          loading={aiBubble.loading}
+          targetScope={aiBubble.targetScope}
+          onAccept={handleAiBubbleAccept}
+          onDiscard={handleAiBubbleDiscard}
+          onRegenerate={handleAiBubbleRegenerate}
+        />
+      )}
+
+      {/* Ask AI / Custom Prompt Input Modal */}
+      {aiBubble.isOpen && aiBubble.isPromptInput && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/20 backdrop-blur-xs animate-in fade-in duration-150">
+          <div 
+            className="w-full max-w-[500px] bg-white rounded-2xl shadow-2xl border border-gray-200/90 overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2.5 px-5 py-3.5 bg-gradient-to-r from-blue-50/70 via-indigo-50/50 to-white border-b border-gray-150">
+              <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                <LuSparkles className="text-base" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900 leading-tight">
+                  Ask Groq AI to Write
+                </h3>
+                <p className="text-[11px] text-gray-500 font-medium">
+                  Type instructions or a topic to generate content
+                </p>
+              </div>
+            </div>
+
+            <form onSubmit={handlePromptSubmit} className="p-5">
+              <textarea
+                value={aiCustomPrompt}
+                onChange={(e) => setAiCustomPrompt(e.target.value)}
+                placeholder="e.g. Write an executive summary about quarterly results..."
+                className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 resize-none transition-all"
+                rows={3}
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handlePromptSubmit(e);
                   }
                 }}
               />
-            )}
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-[11px] text-gray-400">
+                  Press Enter to generate, Shift+Enter for new line
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAiBubbleDiscard}
+                    className="px-3.5 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 active:scale-95 rounded-lg transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!aiCustomPrompt.trim()}
+                    className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 active:scale-95 rounded-lg shadow-xs transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <LuSparkles className="text-xs" />
+                    <span>Generate</span>
+                  </button>
+                </div>
+              </div>
+            </form>
           </div>
         </div>
-
-        {/* Floating Right Margin Comments */}
-        {(activeComment || draftComment) && (
-          <div 
-            className="comment-thread-container fixed z-40 transition-all duration-200 ease-out"
-            style={{ 
-              top: Math.max(130, commentTop), 
-              right: 'max(20px, calc(50vw - 425px - 320px))'
-            }}
-          >
-            {draftComment ? (
-              <NewCommentBoxInline 
-                onCancel={() => setDraftComment(null)}
-                onSave={(text) => {
-                  editor.commands.addComment({
-                    text,
-                    from: draftComment.from,
-                    to: draftComment.to,
-                    userId: user?.id,
-                    userName: user?.name || 'Anonymous'
-                  });
-                  setDraftComment(null);
-                  toast.success("Comment added");
-                }}
-              />
-            ) : (
-              <CommentThread 
-                comment={activeComment}
-                editor={editor}
-                onClose={() => setActiveComment(null)}
-              />
-            )}
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }

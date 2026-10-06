@@ -1,64 +1,71 @@
 # CoWrite ✍️🚀
 
-**CoWrite** is a real-time collaborative document editor built to enhance team productivity with seamless editing, live cursors, threaded comments, AI-powered writing assistance, and secure document sharing.
+**CoWrite** is a real-time collaborative document editor built to enhance team productivity with seamless editing, live cursors, threaded comments, AI-powered writing assistance, Notion-style slash commands, interactive document copilot, and secure document sharing.
 
 ---
 
 ## 🔥 Features
 
-### ✏️ Rich Text Editing
+### ✏️ Rich Text & Modern Block Editing
 - Full rich text editor powered by **TipTap (ProseMirror)**
-- Bold, Italic, Underline, Strikethrough
+- Bold, Italic, Underline, Strikethrough, Code Blocks, Blockquotes, Horizontal Dividers
 - Headings (H1–H6), font size & family selectors
 - Text alignment (Left, Center, Right, Justify)
-- Text color with color picker
-- Undo / Redo
+- Custom text color & color picker palette
+- Undo / Redo history management
 
-### 🔁 Real-Time Collaboration
-- Multi-user simultaneous editing powered by **Yjs + WebSocket**
-- **Named live cursors** — each collaborator's cursor shows their name and a unique color (Google Docs style), fading out after inactivity
-- Live user presence avatars in the top bar with hover tooltips
-- Invite collaborators by email from inside the editor
+### ⚡ Notion-Style Slash Commands (`/`)
+- Type `/` anywhere to summon a floating command palette with keyboard navigation (`↑`/`↓` and `Enter`)
+- Instant commands: Heading 1–3, Bullet List, Numbered List, Blockquote, Code Block, Divider, and AI actions
+- **Customizable Order with Drag-and-Drop (`⋮⋮`)**: Reorder slash commands to match your personal workflow. Custom orders are persisted across sessions in `localStorage`.
+
+### 🤖 VS Code Copilot-Style "Doc Copilot" Side Panel
+- Dedicated collapsible AI assistant panel docked on the right side of the screen
+- **Draggable gutter handle**: Resize the sidebar dynamically with responsive layout adaptations
+- **Multi-line expandable query bar**: Auto-growing prompt input with `Enter` (submit) and `Shift+Enter` (new line)
+- **Instant Query Pills**: One-click execution for common questions (Summary, Key Points, Critique & Improvements)
+- **Smart Contextual Actions**:
+  - **Insert into doc**: Appends formatted AI responses directly into the document.
+  - **Apply corrections to doc**: For critiques or improvement suggestions, CoWrite extracts and applies only the required corrections directly to the text rather than pasting meta-commentary.
+
+### 👥 Unified Top Navigation & Team Collaboration
+- **Unified Single Bar UX**: Clean, distraction-free header following Google Docs / Notion / Figma patterns
+- **Live User Presence**: Colored avatars showing active collaborators viewing or editing with live hover tooltips
+- **Sleek Share Modal**: Integrated "Share" button opening an invite popover to invite teammates by email and manage current member roles (`Owner` vs `Editor`)
+- **Multi-user simultaneous editing** powered by **Yjs + WebSocket**
+- **Named live cursors** — each collaborator's cursor displays their name with smooth animation and automatic inactivity fading
 
 ### 💬 Google Docs-Style Comments
-- Select any text and add a comment from the formatting bubble menu
-- Comments appear in the **right margin** aligned to the selected text
-- Threaded replies on each comment
-- Resolve comments with a ✓ tick — yellow highlight is **immediately** removed without requiring a page reload
-- `Enter` to post, `Shift+Enter` for a new line inside the comment box
+- Select any text and add a comment from the floating formatting bubble menu
+- Aligned comment threads in the right margin
+- Multi-reply threading
+- Immediate resolve with a ✓ tick — highlight is cleared instantly without page refresh
+- Shortcuts: `Enter` to post, `Shift+Enter` for a newline
 
-### 🧠 AI Writing Tools (Google Gemini)
+### 🧠 In-Document AI Writing Tools (Groq / Gemini)
 - Summarize Document
 - Bullet Point Summary
-- Improve Writing
-- Grammar Check
-- Professional Tone
+- Improve Writing & Professional Tone
+- Grammar & Spelling Check
 - Format Document
-- Custom AI Prompt
-- **Ask Document** — ask questions about the content
+- Custom AI Prompt Execution
+- Visual diff highlights (green additions / red deletions) with an **Accept / Reject** review bubble
 
 ### 📁 Document Dashboard
-- Create, rename, and delete documents
+- Create, rename, and manage personal and shared documents
 - **Smart deletion modals:**
-  - If you are the **owner** → warns that all collaborators will lose access
-  - If you are a **collaborator** → warns that your access will be revoked and removes you from the doc (owner's copy is unaffected)
-- Shared documents appear clearly in your dashboard
+  - **Owner**: Warns that collaborators will lose access
+  - **Collaborator**: Allows leaving the document without deleting the owner's copy
 
-### 📤 Export & Share
-- **Download as PDF** — generates a clean, styled PDF in the browser (no server required)
-- **Public View Link** — owners can toggle a public link; anyone with the link can view a **read-only, static snapshot** of the document without logging in
-- Both options live in a single **Export dropdown** in the editor toolbar
+### 📤 Export & Sharing
+- **Download as PDF**: Client-side styled PDF generation via `html2pdf.js`
+- **Public View Link**: Document owners can enable a read-only, sanitized public link for viewers without requiring authentication
 
-### 🔐 Security
-- JWT-based auth with **HttpOnly cookies**
-- Public document endpoint (`/api/documents/public/:id`) requires `isPublic: true` — hard `403` for private docs
-- Public viewer is fully stripped of Yjs/WebSocket — physically cannot edit or connect to the live editing session
-- Only the document **owner** can toggle public access or change `isPublic`
-
-### 🔒 Authentication
-- Email/password Signup & Login
-- Google OAuth integration
-- Protected routes — unauthenticated users are redirected to login
+### 🔐 Security & Auth
+- JWT-based authentication with **HttpOnly cookies**
+- Google OAuth login & signup
+- Protected REST API endpoints
+- Static read-only snapshot mode for public viewers completely detached from live WebSocket sync
 
 ---
 
@@ -66,12 +73,12 @@
 
 | Layer | Technology |
 |---|---|
-| **Frontend** | React, TipTap, Vite, CSS |
+| **Frontend** | React, TipTap (ProseMirror), Vite, TailwindCSS |
 | **Backend** | Node.js, Express, MongoDB (Mongoose) |
 | **Collaboration** | Yjs + y-websocket + y-mongodb-provider |
-| **AI** | Google Gemini API |
+| **AI** | Groq API / Google Gemini |
 | **Auth** | JWT + HttpOnly Cookies, Google OAuth |
-| **PDF Export** | html2pdf.js (client-side) |
+| **PDF Export** | html2pdf.js |
 
 ---
 
@@ -79,18 +86,19 @@
 
 ```
 CoWrite/
-├── Client/          # React frontend (Vite)
+├── Client/                      # React frontend (Vite + TailwindCSS)
 │   └── src/
-│       ├── Pages/         # Editor, Dashboard, Login, Signup, PublicEditor
-│       ├── Components/    # CollaboratorBar, EditorToolbar, CommentPanel, ...
-│       ├── Extensions/    # TipTap custom extensions (CommentExtension, FontStyle, AIExtension)
-│       └── Context/       # Auth context
-├── Server/          # Express REST API
-│   ├── Controllers/       # Document & Auth controllers
-│   ├── Models/            # Mongoose schemas (User, Document)
-│   ├── Routes/            # API routes
-│   └── Middlewares/       # JWT auth middleware
-└── yjs-server/      # Dedicated Yjs WebSocket server with MongoDB persistence
+│       ├── Pages/               # Editor, Dashboard, Login, Signup, PublicEditor
+│       ├── Components/          # AskDocSidebar, SlashCommandList, AIPreviewBubble, CommentPanel, ...
+│       ├── Extensions/          # SlashCommands, SmoothCursor, EditorShortcuts, CommentExtension, ...
+│       └── Context/             # AuthContext
+├── Server/                      # Express REST API & Yjs WebSocket server
+│   ├── Controllers/             # Document, Auth & AI controllers
+│   ├── Models/                  # Mongoose schemas (User, Document)
+│   ├── Routes/                  # Express routes
+│   ├── Middlewares/             # JWT auth middleware
+│   └── Config/                  # Yjs & database configuration
+└── yjs-server/                  # Dedicated Yjs WebSocket server instance
 ```
 
 ---
@@ -101,55 +109,46 @@ CoWrite/
 - Node.js ≥ 18
 - MongoDB Atlas URI (or local MongoDB)
 
-### 1. Clone the repo
+### 1. Clone the repository
 ```bash
 git clone https://github.com/your-username/CoWrite.git
 cd CoWrite
 ```
 
-### 2. Server setup
+### 2. Backend Setup
 ```bash
 cd Server
 npm install
+npm start
 ```
 Create `Server/.env`:
 ```env
 DB_URI=your_mongodb_uri
 JWT_SECRET=your_jwt_secret
 FRONTEND_URL=http://localhost:5173
-PORT=8000
-YJS_PORT=1234
+PORT=3000
+GROQ_API_KEY=your_groq_api_key
 ```
 
-### 3. Yjs WebSocket server
+### 3. Frontend Setup
 ```bash
-cd yjs-server
+cd ../Client
 npm install
-node yjs-server.js
-```
-
-### 4. Client setup
-```bash
-cd Client
-npm install
+npm run dev
 ```
 Create `Client/.env`:
 ```env
-VITE_URL=http://localhost:8000
-VITE_WEBSOCKET_URL=ws://localhost:1234
-VITE_GEMINI_API_KEY=your_gemini_api_key
+VITE_URL=http://localhost:3000
+VITE_WEBSOCKET_URL=ws://localhost:3000
 VITE_GOOGLE_CLIENT_ID=your_google_client_id
 ```
 
-### 5. Start everything
+### 4. Running Locally
 ```bash
-# Terminal 1 - Backend
-cd Server && node server.js
+# Terminal 1 - Backend (REST API + Yjs WebSocket)
+cd Server && npm start
 
-# Terminal 2 - Yjs server
-cd yjs-server && node yjs-server.js
-
-# Terminal 3 - Frontend
+# Terminal 2 - Frontend
 cd Client && npm run dev
 ```
 
@@ -160,22 +159,28 @@ cd Client && npm run dev
 ### Auth
 | Method | Route | Description |
 |---|---|---|
-| POST | `/api/auth/signup` | Register |
-| POST | `/api/auth/login` | Login |
-| POST | `/api/auth/google-signup` | Google OAuth |
-| GET | `/api/auth/me` | Get current user |
+| POST | `/api/auth/signup` | Register new account |
+| POST | `/api/auth/login` | Email/password login |
+| POST | `/api/auth/google-signup` | Google OAuth authentication |
+| GET | `/api/auth/me` | Fetch active session |
 
 ### Documents
 | Method | Route | Auth | Description |
 |---|---|---|---|
-| GET | `/api/documents` | ✅ | List all documents for user |
+| GET | `/api/documents` | ✅ | List user's documents |
 | POST | `/api/documents` | ✅ | Create new document |
-| GET | `/api/documents/:id` | ✅ | Get document (owner/collaborator only) |
-| PUT | `/api/documents/:id` | ✅ | Update title / content / isPublic |
-| DELETE | `/api/documents/:id` | ✅ Owner only | Delete document |
-| DELETE | `/api/documents/:id/leave` | ✅ Collaborator | Remove self from collaborators |
-| POST | `/api/documents/:id/collaborators` | ✅ Owner only | Add collaborator by email |
-| GET | `/api/documents/public/:id` | ❌ No auth | View public document (read-only, sanitized) |
+| GET | `/api/documents/:id` | ✅ | Get document details |
+| PUT | `/api/documents/:id` | ✅ | Update title, content, or visibility |
+| DELETE | `/api/documents/:id` | ✅ Owner | Delete document |
+| DELETE | `/api/documents/:id/leave` | ✅ Collab | Leave shared document |
+| POST | `/api/documents/:id/collaborators` | ✅ Owner | Add collaborator by email |
+| GET | `/api/documents/public/:id` | ❌ | Read-only public preview |
+
+### AI
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| POST | `/api/ai/transform` | ✅ | Execute writing transformation / critique / corrections |
+| POST | `/api/ai/ask` | ✅ | Ask document assistant queries |
 
 ---
 
@@ -183,29 +188,24 @@ cd Client && npm run dev
 
 | Action | How |
 |---|---|
-| **Create a doc** | Dashboard → "+ New Document" |
-| **Invite collaborator** | Open doc → type email in the top bar → "Add" |
-| **Leave a shared doc** | Dashboard → ⋮ menu → Delete (you'll be prompted) |
-| **Add a comment** | Select text → click 💬 in the bubble menu |
-| **Resolve a comment** | Click the ✓ on the comment thread |
-| **Download PDF** | Editor → "Export ↓" → "Download as PDF" |
-| **Share public link** | Editor → "Export ↓" → toggle "Public View Link" → Copy |
-| **AI tools** | Editor → "✨ AI Tools" dropdown |
+| **Slash Commands** | Type `/` on any line to open the command palette (`↑`/`↓` to navigate, drag `⋮⋮` to reorder) |
+| **Doc Copilot** | Click **Doc Copilot** in the top bar to open the resizable AI assistant sidebar |
+| **Share Document** | Click **Share** in the top bar to invite teammates or manage access |
+| **Comments** | Select text → click 💬 in bubble menu → write & post |
+| **AI In-line Fixes** | Highlight text → select an AI action → review diff highlights → Accept/Reject |
+| **Export as PDF** | Click **Export** in the top bar → "Download as PDF" |
+| **Public Link** | Click **Export** → toggle "Public View Link" → copy URL |
 
 ---
 
-## 🌐 Live Links
+## 🌐 Live Deployment
 
 | Service | URL |
 |---|---|
-| **Frontend (Netlify)** | https://krishan-cowrite.netlify.app |
-| **Backend (Render)** | https://cowrite-x48q.onrender.com |
-
-> **Note:** The backend is hosted on Render's free tier and may take 30–60s to wake up from a cold start. Consider setting up [UptimeRobot](https://uptimerobot.com) to ping it every 5 minutes to keep it warm.
+| **Frontend** | https://krishan-cowrite.netlify.app |
+| **Backend** | https://cowrite-x48q.onrender.com |
 
 ---
 
-## 🚧 Work in Progress
-This project is actively being developed. Contributions and ideas are welcome!
-
-Feel free to fork, star ⭐, and contribute!
+## 🤝 Contributing
+Contributions, feedback, and feature requests are welcome! Feel free to fork the repository and open a pull request. ⭐

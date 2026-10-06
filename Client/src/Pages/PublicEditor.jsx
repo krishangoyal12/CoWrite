@@ -162,9 +162,9 @@ export default function PublicEditor() {
       </div>
 
       <div className="flex-1 overflow-auto bg-gray-100 p-8 flex justify-center pb-32">
-        <div className="bg-white shadow-md w-full max-w-[800px] min-h-[1056px] relative flex flex-col mt-4 border border-gray-200 print-container">
-          <div className="flex-1 p-[40px] pt-[60px] pb-[80px] outline-none">
-            <EditorContent editor={editor} />
+        <div className="bg-white shadow-md w-full max-w-[1000px] min-h-[1056px] relative flex flex-col mt-4 border border-gray-200 print-container rounded-lg">
+          <div className="flex-1 p-[32px] md:p-[48px] outline-none">
+            <EditorContent editor={editor} className="tiptap-editor text-black" />
           </div>
         </div>
       </div>

@@ -25,7 +25,9 @@
     "@tiptap/pm": "^2.14.0",
     "@tiptap/react": "^2.22.0",
     "@tiptap/starter-kit": "^2.14.0",
+    "@tiptap/suggestion": "^2.27.3",
     "axios": "^1.10.0",
+    "diff": "^9.0.0",
     "html2pdf.js": "^0.14.0",
     "jwt-decode": "^4.0.0",
     "prosemirror-view": "^1.40.0",
@@ -34,6 +36,7 @@
     "react-hot-toast": "^2.5.2",
     "react-icons": "^5.5.0",
     "react-router-dom": "^7.6.2",
+    "tippy.js": "^6.3.7",
     "y-websocket": "^3.0.0",
     "yjs": "^13.6.27"
   },
