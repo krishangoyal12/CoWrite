@@ -25,7 +25,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'text',
     title: 'Text',
-    description: 'Just start typing with plain text.',
+    description: 'Plain text paragraph.',
     category: 'Basic Blocks',
     icon: <LuType />,
     aliases: ['p', 'paragraph', 'text'],
@@ -36,7 +36,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'h1',
     title: 'Heading 1',
-    description: 'Large section heading.',
+    description: 'Large heading.',
     category: 'Basic Blocks',
     icon: <LuHeading1 />,
     aliases: ['h1', 'heading1', 'title'],
@@ -47,7 +47,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'h2',
     title: 'Heading 2',
-    description: 'Medium section sub-heading.',
+    description: 'Medium sub-heading.',
     category: 'Basic Blocks',
     icon: <LuHeading2 />,
     aliases: ['h2', 'heading2', 'subtitle'],
@@ -71,7 +71,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'bullet_list',
     title: 'Bullet List',
-    description: 'Create a simple bulleted list.',
+    description: 'Simple bulleted list.',
     category: 'Lists & Formatting',
     icon: <LuList />,
     aliases: ['ul', 'bullet', 'list'],
@@ -82,7 +82,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'numbered_list',
     title: 'Numbered List',
-    description: 'Create a list with numbering.',
+    description: 'Numbered list.',
     category: 'Lists & Formatting',
     icon: <LuListOrdered />,
     aliases: ['ol', 'number', 'numbered'],
@@ -93,7 +93,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'blockquote',
     title: 'Blockquote',
-    description: 'Capture a quote or key takeaway.',
+    description: 'Quote callout.',
     category: 'Lists & Formatting',
     icon: <LuQuote />,
     aliases: ['quote', 'blockquote'],
@@ -104,7 +104,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'divider',
     title: 'Divider',
-    description: 'Visually separate sections with a horizontal line.',
+    description: 'Horizontal separator.',
     category: 'Lists & Formatting',
     icon: <LuMinus />,
     aliases: ['hr', 'line', 'divider', 'separator'],
@@ -115,7 +115,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'code_block',
     title: 'Code Block',
-    description: 'Display code with monospace styling.',
+    description: 'Monospace code snippet.',
     category: 'Lists & Formatting',
     icon: <LuCode />,
     aliases: ['code', 'codeblock', 'snippet', 'pre'],
@@ -128,7 +128,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'ai_summarize',
     title: 'Summarize Document',
-    description: 'Summarize all text written above in a preview bubble.',
+    description: 'Summarize text in preview.',
     category: 'Groq AI Assistant',
     icon: <LuFileText />,
     aliases: ['ai summary', 'summarize', 'summary', 'tldr'],
@@ -144,7 +144,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'ai_improve',
     title: 'Improve Writing',
-    description: 'Polish and enhance the document text above in preview.',
+    description: 'Polish and rewrite text.',
     category: 'Groq AI Assistant',
     icon: <LuPencil />,
     aliases: ['ai improve', 'improve', 'rewrite', 'enhance'],
@@ -160,7 +160,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'ai_grammar',
     title: 'Check Grammar',
-    description: 'Detect and correct grammatical errors in preview.',
+    description: 'Fix grammatical errors.',
     category: 'Groq AI Assistant',
     icon: <LuCheck />,
     aliases: ['ai grammar', 'grammar', 'spellcheck'],
@@ -176,7 +176,7 @@ export const DEFAULT_SLASH_COMMANDS = [
   {
     id: 'ai_generate',
     title: 'Ask AI / Generate',
-    description: 'Prompt AI to write new paragraphs or ideas.',
+    description: 'Draft ideas & paragraphs.',
     category: 'Groq AI Assistant',
     icon: <LuSparkles />,
     aliases: ['ai', 'generate', 'ask', 'write'],
@@ -269,7 +269,36 @@ export const SlashCommands = Extension.create({
                 interactive: true,
                 trigger: 'manual',
                 placement: 'bottom-start',
+                maxWidth: 'none',
+                offset: [0, 8],
+                popperOptions: {
+                  modifiers: [
+                    {
+                      name: 'preventOverflow',
+                      options: {
+                        padding: 12,
+                        altAxis: true,
+                      },
+                    },
+                  ],
+                },
               });
+
+              // Industry Best Practice (Notion / Slack / Linear / Google Docs):
+              // Close the transient slash popup immediately when the user scrolls the document.
+              // This completely eliminates repainting lag, layout thrashing, and awkward float drifting.
+              const handleScrollToClose = (e) => {
+                // If the scroll happened inside the slash command items list itself, let it scroll
+                if (component.element && component.element.contains(e.target)) {
+                  return;
+                }
+                popup?.[0]?.destroy();
+              };
+
+              window.addEventListener('scroll', handleScrollToClose, { capture: true, passive: true });
+              component._cleanupScroll = () => {
+                window.removeEventListener('scroll', handleScrollToClose, { capture: true, passive: true });
+              };
             },
 
             onUpdate(props) {
@@ -294,7 +323,10 @@ export const SlashCommands = Extension.create({
             },
 
             onExit() {
-              popup?.[0]?.destroy();
+              component?._cleanupScroll?.();
+              if (popup?.[0] && !popup[0].state?.isDestroyed) {
+                popup[0].destroy();
+              }
               component?.destroy();
             },
           };
