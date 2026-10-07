@@ -24,5 +24,8 @@ const documentSchema = new Schema({
     }
 }, {timestamps: true});
 
+documentSchema.index({ owner: 1, updatedAt: -1 });
+documentSchema.index({ collaborators: 1, updatedAt: -1 });
+
 const documentModel = model('Document', documentSchema)
 module.exports = documentModel

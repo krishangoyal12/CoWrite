@@ -8,7 +8,6 @@ import Underline from "@tiptap/extension-underline";
 import Color from "@tiptap/extension-color";
 import FontStyle from "../Extensions/FontStyle";
 import toast from "react-hot-toast";
-import html2pdf from "html2pdf.js";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
 import Collaboration from "@tiptap/extension-collaboration";
@@ -78,35 +77,40 @@ export default function PublicEditor() {
     checkPublicAccess();
   }, [id]);
 
-  const handleDownloadPDF = () => {
-    const element = document.createElement("div");
-    element.innerHTML = editor.getHTML();
-    element.style.padding = "40px";
-    element.style.fontFamily = "sans-serif";
-    
-    const style = document.createElement("style");
-    style.innerHTML = `
-      h1, h2, h3 { color: #111; }
-      p { color: #333; line-height: 1.5; }
-    `;
-    element.appendChild(style);
+  const handleDownloadPDF = async () => {
+    try {
+      const { default: html2pdf } = await import("html2pdf.js");
+      const element = document.createElement("div");
+      element.innerHTML = editor.getHTML();
+      element.style.padding = "40px";
+      element.style.fontFamily = "sans-serif";
+      
+      const style = document.createElement("style");
+      style.innerHTML = `
+        h1, h2, h3 { color: #111; }
+        p { color: #333; line-height: 1.5; }
+      `;
+      element.appendChild(style);
 
-    const opt = {
-      margin:       0.5,
-      filename:     `${docTitle || 'document'}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
-    };
+      const opt = {
+        margin:       0.5,
+        filename:     `${docTitle || 'document'}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
 
-    toast.promise(
-      html2pdf().set(opt).from(element).save(),
-      {
-        loading: 'Generating PDF...',
-        success: 'PDF downloaded!',
-        error: 'Failed to generate PDF'
-      }
-    );
+      toast.promise(
+        html2pdf().set(opt).from(element).save(),
+        {
+          loading: 'Generating PDF...',
+          success: 'PDF downloaded!',
+          error: 'Failed to generate PDF'
+        }
+      );
+    } catch {
+      toast.error('Failed to load PDF export module');
+    }
   };
 
   if (loading || !editor) {

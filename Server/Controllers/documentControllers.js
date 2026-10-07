@@ -9,8 +9,10 @@ const getAllDocuments = async (req, res) => {
         { collaborators: req.user.id }
       ]
     })
+      .select('title owner collaborators isPublic createdAt updatedAt')
       .populate('owner', '_id name email')
-      .sort({ updatedAt: -1 });
+      .sort({ updatedAt: -1 })
+      .lean();
     if (documents.length === 0) {
       return res.status(200).json({
         message: 'Nothing to show, create your first document',

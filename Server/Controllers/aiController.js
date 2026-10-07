@@ -59,12 +59,11 @@ FORMATTING REQUIREMENTS:
 
     const groq = new Groq({ apiKey });
 
-    // Fallback models in priority order for free-tier resilience
+    // Fast, verified models on Groq
     const candidateModels = [
-      process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-      'openai/gpt-oss-20b',
+      'openai/gpt-oss-120b',
       'qwen/qwen3.8-27b'
-    ].filter((m, i, arr) => arr.indexOf(m) === i);
+    ];
 
     let completion = null;
     let lastError = null;
@@ -128,4 +127,78 @@ FORMATTING REQUIREMENTS:
   }
 };
 
-module.exports = { generateAIResponse };
+const predictTextCompletion = async (req, res) => {
+  try {
+    const { prefix, suffix = '', docTitle = '' } = req.body;
+
+    if (!prefix || typeof prefix !== 'string' || prefix.trim().length < 3) {
+      return res.status(200).json({
+        success: true,
+        data: ''
+      });
+    }
+
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ message: 'GROQ_API_KEY not configured on server', success: false });
+    }
+
+    const groq = new Groq({ apiKey });
+
+    // Keep prompt minimal to stay well under Groq ITPM (Input Tokens Per Minute) limit
+    const recentPrefix = prefix.slice(-120);
+
+    const systemPrompt = 'You are an autocomplete engine. Continue the sentence naturally in 3 to 12 words. Output ONLY the raw continuation text. Do not repeat prefix.';
+
+    const userPrompt = `Continue: "${recentPrefix}"`;
+
+    const candidateModels = [
+      'qwen/qwen3.8-27b',
+      'openai/gpt-oss-20b',
+      'allam-2-7b'
+    ];
+
+    let completionText = '';
+    for (const model of candidateModels) {
+      try {
+        const response = await groq.chat.completions.create({
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          model,
+          temperature: 0.2,
+          max_tokens: 20,
+          stop: ['\n', '"', '<|eot_id|>', '\r']
+        });
+
+        const raw = response.choices?.[0]?.message?.content || '';
+        if (raw) {
+          completionText = raw
+            .replace(/^["'`]|["'`]$/g, '')
+            .replace(/```[\s\S]*?```/g, '')
+            .replace(/<[^>]*>/g, '')
+            .trimEnd();
+          break;
+        }
+      } catch (err) {
+        if (err.status !== 429) {
+          console.warn(`[predictTextCompletion] Model ${model} failed:`, err.message);
+        }
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: completionText
+    });
+  } catch (error) {
+    return res.status(200).json({
+      success: true,
+      data: ''
+    });
+  }
+};
+
+module.exports = { generateAIResponse, predictTextCompletion };
+

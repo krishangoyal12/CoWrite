@@ -50,6 +50,7 @@ export default function Login() {
       const data = await res.json();
       if (res.ok) {
         if (data.token) localStorage.setItem("token", data.token);
+        if (data.user) localStorage.setItem("cowrite_user", JSON.stringify(data.user));
         setAuth(data.user);
         toast.success("Login successful!");
         setForm({ email: "", password: "" });
@@ -78,6 +79,7 @@ export default function Login() {
       const data = await res.json();
       if (res.ok) {
         if (data.token) localStorage.setItem("token", data.token);
+        if (data.user) localStorage.setItem("cowrite_user", JSON.stringify(data.user));
         setAuth(data.user);
         toast.success("Google login successful!");
         navigate("/dashboard");

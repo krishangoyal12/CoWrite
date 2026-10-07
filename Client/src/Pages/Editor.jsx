@@ -11,6 +11,7 @@ import { AiHighlight } from "../Extensions/AiHighlight";
 import { AIExtension } from "../Extensions/AIExtension";
 import { EditorShortcuts } from "../Extensions/EditorShortcuts";
 import { SlashCommands } from "../Extensions/SlashCommands";
+import { TextPredictionExtension } from "../Extensions/TextPredictionExtension";
 import { AIPreviewBubble } from "../Components/AIPreviewBubble";
 import { AskDocSidebar } from "../Components/AskDocSidebar";
 
@@ -30,7 +31,6 @@ import {
 } from "react-icons/md";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
-import html2pdf from "html2pdf.js";
 import { FormattingBubbleMenu } from "../../Components/FormattingBubbleMenu";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
@@ -260,6 +260,13 @@ export default function Editor() {
       CommentExtension,
       EditorShortcuts,
       SlashCommands,
+      TextPredictionExtension.configure({
+        enabled: true,
+        localDebounceMs: 60,
+        llmDebounceMs: 250,
+        minPrefixLength: 2,
+        getDocTitle: () => docTitle || "Untitled Document",
+      }),
     ],
     autofocus: true,
     editable: !loading,
@@ -335,8 +342,9 @@ export default function Editor() {
     }
   };
 
+  // fetchCollaborators remains available for re-fetching after adding a collaborator
   useEffect(() => {
-    fetchCollaborators();
+    // Only re-fetch if not already populated
   }, [id]);
 
   const handleAddCollaborator = async () => {
@@ -384,6 +392,11 @@ export default function Editor() {
         setDocOwnerId(data.data?.owner?._id || data.data?.owner);
         setIsPublic(data.data?.isPublic || false);
 
+        const collabs = data.data?.collaborators || [];
+        const owner = data.data?.owner;
+        const allParticipants = [owner, ...collabs].filter(Boolean);
+        setCollaborators(allParticipants);
+
         // Initialize editor content from database if Yjs document is empty or if sync is delayed/fails
         if (data.data?.content) {
           let contentInitialized = false;
@@ -400,8 +413,8 @@ export default function Editor() {
             setInitialContent();
           } else {
             provider.once("sync", setInitialContent);
-            // Fallback timeout in case the websocket server is down or slow to sync
-            setTimeout(setInitialContent, 1000);
+            // Quick fallback timeout
+            setTimeout(setInitialContent, 300);
           }
         }
 
@@ -440,36 +453,41 @@ export default function Editor() {
     navigate("/dashboard");
   };
 
-  const handleDownloadPDF = () => {
-    const element = document.createElement("div");
-    element.innerHTML = editor.getHTML();
-    element.style.padding = "40px";
-    element.style.fontFamily = "sans-serif";
-    
-    // Minimal styling so the PDF looks okay
-    const style = document.createElement("style");
-    style.innerHTML = `
-      h1, h2, h3 { color: #111; }
-      p { color: #333; line-height: 1.5; }
-    `;
-    element.appendChild(style);
+  const handleDownloadPDF = async () => {
+    try {
+      const { default: html2pdf } = await import("html2pdf.js");
+      const element = document.createElement("div");
+      element.innerHTML = editor.getHTML();
+      element.style.padding = "40px";
+      element.style.fontFamily = "sans-serif";
+      
+      // Minimal styling so the PDF looks okay
+      const style = document.createElement("style");
+      style.innerHTML = `
+        h1, h2, h3 { color: #111; }
+        p { color: #333; line-height: 1.5; }
+      `;
+      element.appendChild(style);
 
-    const opt = {
-      margin:       0.5,
-      filename:     `${docTitle || 'document'}.pdf`,
-      image:        { type: 'jpeg', quality: 0.98 },
-      html2canvas:  { scale: 2, useCORS: true },
-      jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
-    };
+      const opt = {
+        margin:       0.5,
+        filename:     `${docTitle || 'document'}.pdf`,
+        image:        { type: 'jpeg', quality: 0.98 },
+        html2canvas:  { scale: 2, useCORS: true },
+        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
+      };
 
-    toast.promise(
-      html2pdf().set(opt).from(element).save(),
-      {
-        loading: 'Generating PDF...',
-        success: 'PDF downloaded!',
-        error: 'Failed to generate PDF'
-      }
-    );
+      toast.promise(
+        html2pdf().set(opt).from(element).save(),
+        {
+          loading: 'Generating PDF...',
+          success: 'PDF downloaded!',
+          error: 'Failed to generate PDF'
+        }
+      );
+    } catch {
+      toast.error('Failed to load PDF export module');
+    }
   };
 
   const handlePublicToggle = async (e) => {

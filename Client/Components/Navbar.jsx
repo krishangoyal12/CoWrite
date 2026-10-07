@@ -10,6 +10,7 @@ export default function Navbar() {
 
   const handleLogout = async () => {
     localStorage.removeItem("token");
+    localStorage.removeItem("cowrite_user");
     await fetch(`${baseURL}/api/auth/logout`, {
       method: "POST",
       credentials: "include",
