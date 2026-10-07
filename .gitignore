@@ -20,3 +20,8 @@ npm-debug.log*
 # OS files
 .DS_Store
 Thumbs.db
+
+# Planning & Scratch docs
+plan.md
+slash.md
+plan-text-prediction.md
