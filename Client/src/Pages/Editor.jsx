@@ -109,24 +109,41 @@ const FONT_FAMILIES = [
   { label: "Verdana", value: "Verdana, sans-serif" },
 ];
 
+// Curated modern collaboration colors (Google Docs / Figma inspired)
 const COLLAB_COLORS = [
-  "#007bff",
-  "#e83e8c",
-  "#fd7e14",
-  "#28a745",
-  "#20c997",
-  "#6f42c1",
-  "#17a2b8",
-  "#ffc107",
-  "#dc3545",
-  "#343a40",
+  "#2563eb", // Vibrant Blue
+  "#7c3aed", // Rich Violet
+  "#db2777", // Bright Pink
+  "#ea580c", // Vivid Orange
+  "#059669", // Emerald Green
+  "#0891b2", // Teal / Cyan
+  "#d97706", // Amber
+  "#e11d48", // Rose Red
+  "#4f46e5", // Indigo
+  "#16a34a", // Green
 ];
 
+// Deterministic color assignment: User A will have the EXACT same color on Person B and Person C's screen
 function getUserColor(userIdOrEmail) {
-  if (!userIdOrEmail) return COLLAB_COLORS[0];
+  let key = userIdOrEmail;
+  if (!key || key === "guest" || key === "Guest") {
+    // Generate or read a stable browser session ID for guests
+    try {
+      key = sessionStorage.getItem("cowrite:guest-id");
+      if (!key) {
+        key = "guest-" + Math.floor(Math.random() * 100000);
+        sessionStorage.setItem("cowrite:guest-id", key);
+      }
+    } catch (e) {
+      key = "guest-1";
+    }
+  }
+
+  const str = String(key);
   let hash = 0;
-  for (let i = 0; i < userIdOrEmail.length; i++) {
-    hash = userIdOrEmail.charCodeAt(i) + ((hash << 5) - hash);
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0; // Convert to 32bit integer
   }
   return COLLAB_COLORS[Math.abs(hash) % COLLAB_COLORS.length];
 }
@@ -205,6 +222,53 @@ export default function Editor() {
     };
   }, [provider, ydoc]);
   
+  const editorRef = useRef(null);
+  const remoteClientsState = useRef(new Map());
+
+  // Function to mark a remote client active and set a 3-second timer to fade out
+  const handleRemoteActivity = (cid, userInfo) => {
+    if (!cid || cid === provider?.awareness?.clientID) return;
+
+    let clientInfo = remoteClientsState.current.get(cid);
+    if (!clientInfo) {
+      clientInfo = { isIdle: false, timer: null, user: userInfo };
+      remoteClientsState.current.set(cid, clientInfo);
+    } else {
+      clientInfo.isIdle = false;
+      if (userInfo) clientInfo.user = userInfo;
+    }
+
+    if (clientInfo.timer) {
+      clearTimeout(clientInfo.timer);
+      clientInfo.timer = null;
+    }
+
+    // Immediately make caret visible in DOM
+    const editorDom = editorRef.current?.view?.dom;
+    if (editorDom) {
+      const uName = userInfo?.name || clientInfo.user?.name;
+      const selector = `[data-client-id="${cid}"]${uName ? `, [data-user-name="${uName}"]` : ""}`;
+      const carets = editorDom.querySelectorAll(selector);
+      carets.forEach((c) => c.classList.remove("inactive"));
+    }
+
+    // Set 3-second idle timer: fade out when no activity for 3 seconds
+    clientInfo.timer = setTimeout(() => {
+      clientInfo.isIdle = true;
+      clientInfo.timer = null;
+      const dom = editorRef.current?.view?.dom;
+      if (dom) {
+        const uName = clientInfo.user?.name;
+        const selector = `[data-client-id="${cid}"]${uName ? `, [data-user-name="${uName}"]` : ""}`;
+        const carets = dom.querySelectorAll(selector);
+        carets.forEach((c) => c.classList.add("inactive"));
+      }
+    }, 3000);
+  };
+
+  const handleRemoteActivityRef = useRef(handleRemoteActivity);
+  handleRemoteActivityRef.current = handleRemoteActivity;
+
   const [awarenessUsers, setAwarenessUsers] = useState([]);
   useEffect(() => {
     if (!provider) return;
@@ -224,7 +288,45 @@ export default function Editor() {
       });
       setAwarenessUsers(users);
 
-      // Reset cursor label animation for users who just moved their cursor
+      // Handle remote activity from awareness updates
+      if (changes) {
+        if (changes.added) {
+          changes.added.forEach((cid) => {
+            if (cid !== provider.awareness.clientID) {
+              const state = states.get(cid);
+              if (state?.cursor) {
+                handleRemoteActivityRef.current(cid, state.user);
+              }
+            }
+          });
+        }
+        if (changes.updated) {
+          changes.updated.forEach((cid) => {
+            if (cid !== provider.awareness.clientID) {
+              const state = states.get(cid);
+              if (state?.cursor) {
+                handleRemoteActivityRef.current(cid, state.user);
+              }
+            }
+          });
+        }
+        if (changes.removed) {
+          changes.removed.forEach((cid) => {
+            const clientInfo = remoteClientsState.current.get(cid);
+            if (clientInfo?.timer) {
+              clearTimeout(clientInfo.timer);
+            }
+            remoteClientsState.current.delete(cid);
+          });
+        }
+      } else {
+        // Initial load / sync
+        states.forEach((state, cid) => {
+          if (cid !== provider.awareness.clientID && state?.cursor) {
+            handleRemoteActivityRef.current(cid, state.user);
+          }
+        });
+      }
     };
     
     provider.awareness.on("change", updateAwareness);
@@ -234,6 +336,34 @@ export default function Editor() {
       provider.awareness.off("change", updateAwareness);
     };
   }, [provider]);
+
+  // Synchronize remote doc edits to keep remote cursor alive
+  useEffect(() => {
+    if (!ydoc || !provider) return;
+    const handleYdocUpdate = (update, origin) => {
+      if (origin === provider) {
+        const states = provider.awareness.getStates();
+        states.forEach((state, cid) => {
+          if (cid !== provider.awareness.clientID && state?.cursor) {
+            handleRemoteActivityRef.current(cid, state.user);
+          }
+        });
+      }
+    };
+    ydoc.on("update", handleYdocUpdate);
+    return () => {
+      ydoc.off("update", handleYdocUpdate);
+    };
+  }, [ydoc, provider]);
+
+  useEffect(() => {
+    return () => {
+      remoteClientsState.current.forEach((info) => {
+        if (info.timer) clearTimeout(info.timer);
+      });
+      remoteClientsState.current.clear();
+    };
+  }, []);
 
   const [activeComment, setActiveComment] = useState(null);
   const [draftComment, setDraftComment] = useState(null);
@@ -251,8 +381,56 @@ export default function Editor() {
       CollaborationCursor.configure({
         provider,
         user: {
-          name: user?.name || "Guest",
-          color: getUserColor(user?.id || user?.email || "guest"),
+          name: user?.name || `Collaborator ${(provider?.awareness?.clientID || 1) % 100}`,
+          color: getUserColor(user?.id || user?.email || (user?.name || `Collaborator ${(provider?.awareness?.clientID || 1) % 100}`)),
+          clientId: provider?.awareness?.clientID,
+        },
+        render: (user, clientId) => {
+          const cid = clientId || user?.clientId;
+          const cursor = document.createElement("span");
+          cursor.classList.add("collaboration-cursor__caret");
+          cursor.setAttribute(
+            "style",
+            `border-color: ${user.color}; color: ${user.color};`
+          );
+          if (cid) {
+            cursor.dataset.clientId = String(cid);
+          }
+          if (user?.name) {
+            cursor.dataset.userName = user.name;
+          }
+
+          const label = document.createElement("div");
+          label.classList.add("collaboration-cursor__label");
+          label.setAttribute("style", `background-color: ${user.color}`);
+          label.appendChild(document.createTextNode(user.name || "Collaborator"));
+          cursor.appendChild(label);
+
+          // Check if this remote client is currently idle
+          let clientInfo = cid ? remoteClientsState.current.get(cid) : null;
+          if (!clientInfo && user?.name) {
+            for (const info of remoteClientsState.current.values()) {
+              if (info.user?.name === user.name) {
+                clientInfo = info;
+                break;
+              }
+            }
+          }
+
+          if (clientInfo) {
+            if (clientInfo.isIdle) {
+              cursor.classList.add("inactive");
+            } else {
+              cursor.classList.remove("inactive");
+            }
+          } else {
+            // New remote client: initialize active with a 3s timer
+            if (cid && cid !== provider?.awareness?.clientID) {
+              handleRemoteActivityRef.current(cid, user);
+            }
+          }
+
+          return cursor;
         },
       }),
       AIExtension,
@@ -284,6 +462,34 @@ export default function Editor() {
       setTextColor(editor.getAttributes("color").color || "#000000");
     },
   });
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
+  // Dynamically synchronize local user profile to Yjs Awareness and TipTap CollaborationCursor
+  useEffect(() => {
+    if (!provider || !editor) return;
+
+    const assignedName = user?.name || `Collaborator ${(provider.awareness?.clientID || 1) % 100}`;
+    const assignedColor = getUserColor(user?.id || user?.email || assignedName);
+
+    const currentUserState = {
+      name: assignedName,
+      color: assignedColor,
+      clientId: provider.awareness.clientID,
+    };
+
+    // Update TipTap's collaboration-cursor extension
+    try {
+      editor.commands.updateUser?.(currentUserState);
+    } catch (e) {}
+
+    // Ensure Yjs awareness broadcasts this user state
+    if (provider.awareness) {
+      provider.awareness.setLocalStateField("user", currentUserState);
+    }
+  }, [user, provider, editor]);
 
   useEffect(() => {
     if (!editor) return;

@@ -48,40 +48,54 @@
     caret-color: #000000 !important;
 }
 
-/* Fluid Smooth Cursor Transitions for Real-Time Collaborators */
 .tiptap-editor .collaboration-cursor__caret {
-    border-left: 2px solid currentColor;
-    margin-left: -1px;
-    margin-right: -1px;
-    pointer-events: auto;
-    position: relative;
-    word-break: normal;
-    border-radius: 1px;
-    transition: transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1), left 0.12s cubic-bezier(0.2, 0.9, 0.3, 1), top 0.12s cubic-bezier(0.2, 0.9, 0.3, 1);
-    will-change: transform, left, top;
+  border-left: 2px solid currentColor;
+  margin-left: -1px;
+  margin-right: -1px;
+  pointer-events: none;
+  position: relative;
+  word-break: normal;
+  border-radius: 1px;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.15s ease-in, visibility 0.15s;
+  will-change: opacity;
+}
+
+/* When other user stops typing/moving for 3 seconds, smoothly fade out */
+.tiptap-editor .collaboration-cursor__caret.inactive {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transition: opacity 0.8s ease-out, visibility 0.8s ease-out;
 }
 
 .tiptap-editor .collaboration-cursor__label {
-    border-radius: 4px;
-    color: #fff;
-    font-size: 11px;
-    font-weight: 600;
-    left: -2px;
-    line-height: normal;
-    padding: 0.15rem 0.4rem;
-    position: absolute;
-    top: -1.6em;
-    user-select: none;
-    white-space: nowrap;
-    opacity: 0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
-    transition: opacity 0.2s ease-in-out, transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1);
-    animation: fadeOutLabel 2.5s ease forwards;
+  border-radius: 4px 4px 4px 0px;
+  color: #ffffff !important;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  left: -2px;
+  line-height: 1;
+  padding: 3px 6px;
+  position: absolute;
+  top: -1.75em;
+  user-select: none;
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  transform: translateY(0);
+  z-index: 20;
 }
 
-.tiptap-editor .collaboration-cursor__caret:hover .collaboration-cursor__label {
-    opacity: 1;
-    animation: none;
+/* Subtle selection background matching the collaborator */
+.tiptap-editor .collaboration-cursor__selection {
+  background-color: currentColor;
+  opacity: 0.18;
+  border-radius: 2px;
+  pointer-events: none;
+  transition: opacity 0.5s ease-out;
 }
 
 @keyframes highlightFade {
