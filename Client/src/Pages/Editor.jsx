@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -18,8 +18,9 @@ import { AskDocSidebar } from "../Components/AskDocSidebar";
 import { AIBubbleMenu } from "../../Components/AIBubbleMenu";
 import { AIDropdownMenu } from "../../Components/AIDropdownMenu";
 import toast from "react-hot-toast";
-import { FiBold, FiItalic, FiRotateCcw, FiRotateCw } from "react-icons/fi";
-import { LuSparkles, LuCircleHelp, LuUserPlus, LuUsers } from "react-icons/lu";
+import { FiBold, FiItalic, FiRotateCcw, FiRotateCw, FiLink, FiExternalLink, FiCopy, FiTrash2, FiEdit2 } from "react-icons/fi";
+import Link from "@tiptap/extension-link";
+import { LuSparkles, LuCircleHelp, LuUserPlus, LuUsers, LuCloud, LuCloudOff, LuCheck, LuMaximize2, LuMinimize2 } from "react-icons/lu";
 import { MdColorize } from "react-icons/md";
 import { MdFormatStrikethrough, MdFormatUnderlined } from "react-icons/md";
 import { BiHeading } from "react-icons/bi";
@@ -134,7 +135,7 @@ function getUserColor(userIdOrEmail) {
         key = "guest-" + Math.floor(Math.random() * 100000);
         sessionStorage.setItem("cowrite:guest-id", key);
       }
-    } catch (e) {
+    } catch {
       key = "guest-1";
     }
   }
@@ -171,10 +172,90 @@ function NewCommentBoxInline({ onCancel, onSave }) {
   );
 }
 
+function escapeHtml(str) {
+  if (!str) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function removeLinkFromEditor(editor, linkDom, clickPos) {
+  if (!editor) return;
+  const doc = editor.state.doc;
+  let targetPos = clickPos;
+
+  if (linkDom) {
+    try {
+      const startPos = editor.view.posAtDOM(linkDom, 0);
+      if (startPos + 1 <= doc.content.size) {
+        targetPos = startPos + 1;
+      } else {
+        targetPos = startPos;
+      }
+    } catch {
+      // fallback
+    }
+  }
+
+  if (targetPos == null) {
+    const { from, to } = editor.state.selection;
+    targetPos = from !== to ? from + 1 : from;
+  }
+
+  targetPos = Math.max(0, Math.min(targetPos, doc.content.size));
+
+  // Find the exact mark range in the ProseMirror doc
+  const linkType = editor.schema.marks.link;
+  let markRange = null;
+
+  if (linkType) {
+    for (const testPos of [targetPos, Math.max(0, targetPos - 1), Math.min(doc.content.size, targetPos + 1)]) {
+      const $pos = doc.resolve(testPos);
+      const parent = $pos.parent;
+      const parentStart = $pos.start();
+
+      parent.nodesBetween(0, Math.max(0, parent.nodeSize - 2), (child, offset) => {
+        if (child.marks.some((m) => m.type === linkType)) {
+          const from = parentStart + offset;
+          const to = from + child.nodeSize;
+          if (testPos >= from && testPos <= to) {
+            markRange = { from, to };
+            return false;
+          }
+        }
+      });
+      if (markRange) break;
+    }
+  }
+
+  if (markRange) {
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(markRange)
+      .unsetLink()
+      .unsetMark("link")
+      .run();
+  } else {
+    editor
+      .chain()
+      .focus()
+      .setTextSelection(targetPos)
+      .extendMarkRange("link")
+      .unsetLink()
+      .unsetMark("link")
+      .run();
+  }
+}
+
 export default function Editor() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [docTitle, setDocTitle] = useState("");
+  const isTitleCustomized = useRef(false);
   const [docOwnerId, setDocOwnerId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [headingLevel, setHeadingLevel] = useState("paragraph");
@@ -185,10 +266,135 @@ export default function Editor() {
   const [customColor, setCustomColor] = useState("#000000");
   const [showAiMenu, setShowAiMenu] = useState(false);
   const [showAskDocInput, setShowAskDocInput] = useState(false);
-  const [askDocPrompt, setAskDocPrompt] = useState("");
   const askDocInputRef = useRef(null);
-  const saveTimeout = useRef(null);
   const aiMenuRef = useRef(null);
+
+  // Google Docs style Link states & handlers
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [linkText, setLinkText] = useState("");
+  const [linkUrl, setLinkUrl] = useState("");
+  const linkModalRef = useRef(null);
+  const linkRangeRef = useRef(null);
+
+  // Floating Link Preview Card (Google Docs style on single click)
+  const [linkPreview, setLinkPreview] = useState(null); // { href, text, top, left, linkDom, pos }
+  const linkPreviewRef = useRef(null);
+
+  const handleOpenLinkModal = useCallback(() => {
+    if (!editorRef.current) return;
+    const ed = editorRef.current;
+
+    // If cursor is within an existing link mark, expand selection to cover the entire link
+    if (ed.isActive("link")) {
+      ed.chain().extendMarkRange("link").run();
+    }
+
+    const { from, to } = ed.state.selection;
+    linkRangeRef.current = { from, to };
+    const selectedText = from !== to ? ed.state.doc.textBetween(from, to, " ") : "";
+    const currentHref = ed.getAttributes("link").href || "";
+    setLinkText(selectedText);
+    setLinkUrl(currentHref);
+    setLinkPreview(null);
+    setShowLinkModal(true);
+  }, []);
+
+  const handleRemoveLink = useCallback(() => {
+    if (!editorRef.current) return;
+    const ed = editorRef.current;
+    const range = linkRangeRef.current || ed.state.selection;
+    const testPos = range ? range.from + 1 : ed.state.selection.from;
+    removeLinkFromEditor(ed, null, testPos);
+    setShowLinkModal(false);
+    setLinkPreview(null);
+    toast.success("Link removed");
+  }, []);
+
+  const handleApplyLink = useCallback((e) => {
+    if (e) e.preventDefault();
+    if (!editorRef.current) return;
+    const ed = editorRef.current;
+
+    let url = linkUrl.trim();
+    if (!url) {
+      handleRemoveLink();
+      return;
+    }
+
+    if (!/^(https?:\/\/|mailto:|tel:)/i.test(url)) {
+      url = `https://${url}`;
+    }
+
+    const range = linkRangeRef.current || ed.state.selection;
+    const { from, to } = range;
+    const selectedText = from !== to ? ed.state.doc.textBetween(from, to, " ") : "";
+    const displayText = linkText.trim() || selectedText || url;
+
+    if (from !== to) {
+      if (displayText !== selectedText) {
+        // User customized or changed display text: replace selection with new link markup
+        ed.chain()
+          .focus()
+          .setTextSelection({ from, to })
+          .insertContent(`<a href="${escapeHtml(url)}">${escapeHtml(displayText)}</a>`)
+          .run();
+      } else {
+        // User kept existing selection: apply link mark directly to preserve styling
+        ed.chain()
+          .focus()
+          .setTextSelection({ from, to })
+          .setLink({ href: url })
+          .run();
+      }
+    } else {
+      // No text selected: insert new linked text at cursor
+      ed.chain()
+        .focus()
+        .setTextSelection(from)
+        .insertContent(`<a href="${escapeHtml(url)}">${escapeHtml(displayText)}</a>`)
+        .run();
+    }
+
+    setShowLinkModal(false);
+    setLinkPreview(null);
+    toast.success("Link applied");
+  }, [linkText, linkUrl, handleRemoveLink]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (linkModalRef.current && !linkModalRef.current.contains(event.target)) {
+        setShowLinkModal(false);
+      }
+      if (linkPreviewRef.current && !linkPreviewRef.current.contains(event.target)) {
+        if (!event.target.closest("a")) {
+          setLinkPreview(null);
+        }
+      }
+    };
+    const handleScroll = () => {
+      if (linkPreview) {
+        setLinkPreview(null);
+      }
+    };
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        handleOpenLinkModal();
+      } else if (e.key === "Escape") {
+        setShowLinkModal(false);
+        setLinkPreview(null);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleScroll, true);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScroll, true);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showLinkModal, linkPreview, handleOpenLinkModal]);
   const { auth: user } = useAuth();
 
   const authFetch = (url, options = {}) => {
@@ -210,13 +416,30 @@ export default function Editor() {
   const exportMenuRef = useRef(null);
   const shareModalRef = useRef(null);
 
+  const [isFullWidth, setIsFullWidth] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("synced"); // 'synced' | 'saving' | 'offline'
+
   const [ydoc] = useState(() => new Y.Doc());
   const [provider] = useState(
     () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc)
   );
 
   useEffect(() => {
+    const handleStatus = (event) => {
+      if (event.status === "connected") {
+        setSyncStatus("synced");
+      } else if (event.status === "connecting") {
+        setSyncStatus("saving");
+      } else {
+        setSyncStatus("offline");
+      }
+    };
+    provider.on("status", handleStatus);
+    provider.on("sync", (isSynced) => {
+      if (isSynced) setSyncStatus("synced");
+    });
     return () => {
+      provider.off("status", handleStatus);
       provider.destroy();
       ydoc.destroy();
     };
@@ -357,11 +580,12 @@ export default function Editor() {
   }, [ydoc, provider]);
 
   useEffect(() => {
+    const clientsMap = remoteClientsState.current;
     return () => {
-      remoteClientsState.current.forEach((info) => {
+      clientsMap.forEach((info) => {
         if (info.timer) clearTimeout(info.timer);
       });
-      remoteClientsState.current.clear();
+      clientsMap.clear();
     };
   }, []);
 
@@ -376,6 +600,17 @@ export default function Editor() {
       FontStyle,
       Underline,
       Color,
+      Link.configure({
+        openOnClick: false,
+        inclusive: false,
+        autolink: true,
+        HTMLAttributes: {
+          class: "text-blue-600 underline cursor-pointer hover:text-blue-800 transition-colors",
+          target: "_blank",
+          rel: "noopener noreferrer",
+          title: "Ctrl+Click to open link",
+        },
+      }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Collaboration.configure({ document: ydoc }),
       CollaborationCursor.configure({
@@ -448,6 +683,38 @@ export default function Editor() {
     ],
     autofocus: true,
     editable: !loading,
+    editorProps: {
+      handleClick: (view, pos, event) => {
+        const link = event.target.closest("a");
+        if (!link) {
+          setLinkPreview(null);
+          return false;
+        }
+
+        const href = link.getAttribute("href");
+        if (!href) return false;
+
+        // 1. Ctrl + Click (or Cmd + Click) follows link directly in a new tab
+        if (event.ctrlKey || event.metaKey) {
+          event.preventDefault();
+          window.open(href, "_blank", "noopener,noreferrer");
+          return true;
+        }
+
+        // 2. Normal Single Click: display Google Docs style floating clickable preview chip
+        event.preventDefault();
+        const rect = link.getBoundingClientRect();
+        setLinkPreview({
+          href,
+          text: link.textContent || href,
+          top: rect.bottom + 6,
+          left: Math.max(16, Math.min(window.innerWidth - 380, rect.left)),
+          linkDom: link,
+          pos,
+        });
+        return true;
+      },
+    },
     onUpdate: ({ editor }) => {
       const { $from } = editor.state.selection;
       const node = $from.node();
@@ -460,6 +727,42 @@ export default function Editor() {
       setFontSize(marks.fontSize || "16px");
       setFontFamily(marks.fontFamily || "");
       setTextColor(editor.getAttributes("color").color || "#000000");
+
+      // Google Docs style auto-titling: automatically adopt 1st heading or first few words
+      if (!isTitleCustomized.current) {
+        let extractedTitle = "";
+        editor.state.doc.descendants((childNode) => {
+          if (extractedTitle) return false;
+          if (childNode.type.name === "heading") {
+            const headingText = childNode.textContent.trim();
+            if (headingText) {
+              extractedTitle = headingText;
+              return false;
+            }
+          }
+          return true;
+        });
+
+        // Fallback: if no heading yet, use the first non-empty text node truncated to 6-8 words
+        if (!extractedTitle) {
+          editor.state.doc.descendants((childNode) => {
+            if (extractedTitle) return false;
+            if (childNode.isText) {
+              const text = childNode.text.trim();
+              if (text.length > 2) {
+                const words = text.split(/\s+/).slice(0, 7).join(" ");
+                extractedTitle = words;
+                return false;
+              }
+            }
+            return true;
+          });
+        }
+
+        if (extractedTitle && extractedTitle !== docTitle) {
+          setDocTitle(extractedTitle.slice(0, 60));
+        }
+      }
     },
   });
 
@@ -483,7 +786,9 @@ export default function Editor() {
     // Update TipTap's collaboration-cursor extension
     try {
       editor.commands.updateUser?.(currentUserState);
-    } catch (e) {}
+    } catch {
+      // Ignore if command not registered
+    }
 
     // Ensure Yjs awareness broadcasts this user state
     if (provider.awareness) {
@@ -507,7 +812,9 @@ export default function Editor() {
           try {
             const coords = editor.view.coordsAtPos(comment.from);
             setCommentTop(coords.top);
-          } catch (err) {}
+          } catch {
+            // Position fallback
+          }
         }
       } else {
         // Only close if we click outside the comment thread container
@@ -527,7 +834,9 @@ export default function Editor() {
       try {
         const coords = editor.view.coordsAtPos(draftComment.from);
         setCommentTop(coords.top);
-      } catch (err) {}
+      } catch {
+        // Position fallback
+      }
     }
   }, [draftComment, editor]);
 
@@ -544,7 +853,7 @@ export default function Editor() {
         setCollaborators(allParticipants);
       }
     } catch {
-      // empty
+      // Ignore network errors on passive fetch
     }
   };
 
@@ -576,6 +885,29 @@ export default function Editor() {
     setAdding(false);
   };
 
+  const [revokingId, setRevokingId] = useState(null);
+
+  const handleRevokeAccess = async (collaboratorId, collaboratorName) => {
+    if (!collaboratorId) return;
+    setRevokingId(collaboratorId);
+    try {
+      const res = await authFetch(`${baseURL}/api/documents/${id}/collaborators/${collaboratorId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Revoked access for ${collaboratorName || "user"}`);
+        fetchCollaborators();
+      } else {
+        toast.error(data.message || "Failed to revoke access");
+      }
+    } catch {
+      toast.error("Failed to revoke access");
+    }
+    setRevokingId(null);
+  };
+
   useEffect(() => {
     if (!editor) return;
     const loadDocument = async () => {
@@ -595,6 +927,11 @@ export default function Editor() {
         if (!res.ok) throw new Error();
         const title = data.data?.title || "Untitled Document";
         setDocTitle(title);
+        if (title && title !== "Untitled Document") {
+          isTitleCustomized.current = true;
+        } else {
+          isTitleCustomized.current = false;
+        }
         setDocOwnerId(data.data?.owner?._id || data.data?.owner);
         setIsPublic(data.data?.isPublic || false);
 
@@ -640,18 +977,29 @@ export default function Editor() {
 
 
 
-  const saveDocument = async () => {
+  const saveDocument = useCallback(async () => {
+    setSyncStatus("saving");
     try {
       await authFetch(`${baseURL}/api/documents/${id}`, {
         method: "PUT",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: docTitle, content: editor.getHTML() }),
+        body: JSON.stringify({ title: docTitle, content: editor ? editor.getHTML() : "" }),
       });
+      setSyncStatus("synced");
     } catch {
-      // empty
+      setSyncStatus("offline");
     }
-  };
+  }, [id, docTitle, editor]);
+
+  // Debounced title autosave
+  useEffect(() => {
+    if (!docTitle || id === "new") return;
+    const timer = setTimeout(() => {
+      saveDocument();
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [docTitle, id, saveDocument]);
 
   const handleSave = async () => {
     await saveDocument();
@@ -829,16 +1177,6 @@ export default function Editor() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showAskDocInput]);
 
-  const handleAskDoc = () => {
-    if (!askDocPrompt.trim() || !editor) return;
-    editor.commands.generateText({
-      task: "ask_document",
-      prompt: askDocPrompt,
-    });
-    setShowAskDocInput(false);
-    setAskDocPrompt("");
-  };
-
   const [aiBubble, setAiBubble] = useState({
     isOpen: false,
     task: null,
@@ -853,7 +1191,7 @@ export default function Editor() {
   });
   const [aiCustomPrompt, setAiCustomPrompt] = useState("");
 
-  const triggerAIOperation = async ({ task, inputText, targetScope, insertPos, replaceFrom, replaceTo }) => {
+  const triggerAIOperation = useCallback(async ({ task, inputText, targetScope, insertPos, replaceFrom, replaceTo }) => {
     setAiBubble({
       isOpen: true,
       task,
@@ -909,7 +1247,7 @@ export default function Editor() {
         loading: false,
       }));
     }
-  };
+  }, [editor]);
 
   useEffect(() => {
     const handleAISlashCommand = (e) => {
@@ -975,7 +1313,7 @@ export default function Editor() {
     return () => {
       window.removeEventListener("cowrite:ai-slash-command", handleAISlashCommand);
     };
-  }, [editor]);
+  }, [editor, triggerAIOperation]);
 
   const handleAiBubbleAccept = () => {
     if (!editor || !aiBubble.result) return;
@@ -1050,12 +1388,15 @@ export default function Editor() {
 
           <div className="h-6 w-px bg-gray-200 hidden sm:block flex-shrink-0 mx-1"></div>
 
-          <div className="flex-1 max-w-xl min-w-[160px]">
+          <div className="flex-1 max-w-xl min-w-[160px] flex items-center gap-3">
             {user?.id === docOwnerId ? (
               <input
                 type="text"
                 value={docTitle}
-                onChange={(e) => setDocTitle(e.target.value)}
+                onChange={(e) => {
+                  isTitleCustomized.current = true;
+                  setDocTitle(e.target.value);
+                }}
                 className="bg-transparent text-lg font-semibold text-gray-800 hover:bg-gray-50 focus:bg-white rounded-md border border-transparent focus:border-blue-400 outline-none px-2.5 py-1 w-full transition-colors truncate"
                 placeholder="Untitled Document"
               />
@@ -1070,6 +1411,26 @@ export default function Editor() {
                 aria-label="Document Title (read only)"
               />
             )}
+
+            {/* Ambient Cloud Sync Status Badge */}
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium flex-shrink-0 transition-all select-none">
+              {syncStatus === "saving" ? (
+                <span className="flex items-center gap-1.5 text-blue-600 bg-blue-50 border border-blue-100 px-2 py-0.5 rounded-full animate-pulse" title="Saving changes...">
+                  <LuCloud className="text-xs" />
+                  <span>Saving...</span>
+                </span>
+              ) : syncStatus === "offline" ? (
+                <span className="flex items-center gap-1.5 text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full" title="Offline: syncing locally">
+                  <LuCloudOff className="text-xs" />
+                  <span>Offline</span>
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-emerald-700 bg-emerald-50/80 border border-emerald-150 px-2 py-0.5 rounded-full" title="All edits saved automatically to cloud">
+                  <LuCloud className="text-xs text-emerald-600" />
+                  <span>Saved</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
@@ -1197,13 +1558,35 @@ export default function Editor() {
                                 )}
                               </div>
                             </div>
-                            <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
-                              isOwner
-                                ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                : "bg-blue-50 text-blue-600 border border-blue-100"
-                            }`}>
-                              {isOwner ? "Owner" : "Editor"}
-                            </span>
+                            <div className="flex items-center gap-1.5 flex-shrink-0">
+                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                                isOwner
+                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                  : "bg-blue-50 text-blue-600 border border-blue-100"
+                              }`}>
+                                {isOwner ? "Owner" : "Editor"}
+                              </span>
+
+                              {/* Owner can revoke access for any non-owner collaborator */}
+                              {user?.id === docOwnerId && !isOwner && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleRevokeAccess(cId, cName);
+                                  }}
+                                  disabled={revokingId === cId}
+                                  className="p-1 rounded-lg text-gray-400 hover:text-rose-600 hover:bg-rose-50 transition-colors disabled:opacity-50"
+                                  title={`Revoke access for ${cName}`}
+                                >
+                                  {revokingId === cId ? (
+                                    <div className="w-3.5 h-3.5 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
+                                  ) : (
+                                    <FiTrash2 className="w-3.5 h-3.5" />
+                                  )}
+                                </button>
+                              )}
+                            </div>
                           </div>
                         );
                       })
@@ -1317,9 +1700,18 @@ export default function Editor() {
             )}
           </div>
 
+          {/* Full-width / Centered Mode Toggle */}
+          <button
+            onClick={() => setIsFullWidth((v) => !v)}
+            className="p-2 rounded-lg text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition border border-gray-200"
+            title={isFullWidth ? "Switch to Standard View (centered page)" : "Switch to Full Width View"}
+          >
+            {isFullWidth ? <LuMinimize2 className="text-base" /> : <LuMaximize2 className="text-base" />}
+          </button>
+
           <button
             onClick={handleSave}
-            className="bg-blue-600 text-white px-5 py-2 rounded hover:bg-blue-700 transition"
+            className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition"
           >
             Save
           </button>
@@ -1550,10 +1942,150 @@ export default function Editor() {
               ? "bg-blue-600 text-white"
               : "bg-white text-gray-700 hover:bg-blue-50"
           }`}
-          title="Underline"
+          title="Underline (Ctrl+U)"
         >
           <MdFormatUnderlined />
         </button>
+
+        <span className="mx-2 border-l border-gray-300 h-6" />
+
+        {/* Google Docs style Insert Link */}
+        <div className="relative" ref={linkModalRef}>
+          <button
+            type="button"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={handleOpenLinkModal}
+            className={`p-2 rounded transition text-xl flex items-center justify-center ${
+              editor.isActive("link")
+                ? "bg-blue-600 text-white"
+                : showLinkModal
+                ? "bg-blue-100 text-blue-700"
+                : "bg-white text-gray-700 hover:bg-blue-50"
+            }`}
+            title="Insert link (Ctrl+K)"
+          >
+            <FiLink />
+          </button>
+
+          {showLinkModal && (
+            <div className="absolute z-50 mt-2 left-0 sm:left-auto sm:right-0 bg-white border border-gray-200 rounded-2xl shadow-2xl p-4 w-80 sm:w-96 animate-in fade-in zoom-in-95 duration-150">
+              <form onSubmit={handleApplyLink} className="flex flex-col gap-3">
+                <div className="flex items-center justify-between pb-1 border-b border-gray-100">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700">
+                    <FiLink className="text-blue-600" />
+                    <span>{editor.isActive("link") ? "Edit Link" : "Insert Link"}</span>
+                  </div>
+                  <div className="text-[10px] text-gray-400 font-medium">Ctrl+K</div>
+                </div>
+
+                {/* Active Link Preview if editing existing link */}
+                {editor.isActive("link") && editor.getAttributes("link").href && (
+                  <div className="flex items-center justify-between p-2 bg-blue-50/60 rounded-xl border border-blue-100 text-xs text-blue-800">
+                    <a
+                      href={editor.getAttributes("link").href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="truncate max-w-[200px] hover:underline flex items-center gap-1 font-medium"
+                      title={editor.getAttributes("link").href}
+                    >
+                      <FiExternalLink className="flex-shrink-0 text-blue-600 text-xs" />
+                      <span className="truncate">{editor.getAttributes("link").href}</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(editor.getAttributes("link").href);
+                        toast.success("Link copied");
+                      }}
+                      className="text-gray-500 hover:text-blue-700 p-1 rounded transition"
+                      title="Copy link"
+                    >
+                      <FiCopy className="text-xs" />
+                    </button>
+                  </div>
+                )}
+
+                {/* Text to display */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-gray-600">
+                    Text
+                  </label>
+                  <input
+                    type="text"
+                    value={linkText}
+                    onChange={(e) => setLinkText(e.target.value)}
+                    placeholder="Text to display"
+                    className="border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-medium"
+                  />
+                </div>
+
+                {/* Link URL */}
+                <div className="flex flex-col gap-1">
+                  <label className="text-[11px] font-bold text-gray-600">
+                    Link
+                  </label>
+                  <input
+                    type="text"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    placeholder="Paste a link, or search"
+                    className="border border-gray-200 rounded-xl px-3 py-1.5 text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 font-mono"
+                    autoFocus
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-1 mt-1">
+                  {editor.isActive("link") ? (
+                    <button
+                      type="button"
+                      onClick={handleRemoveLink}
+                      className="flex items-center gap-1 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 px-2.5 py-1.5 rounded-lg transition"
+                      title="Remove link"
+                    >
+                      <FiTrash2 className="text-xs" />
+                      <span>Remove</span>
+                    </button>
+                  ) : <div />}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowLinkModal(false)}
+                      className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!linkUrl.trim()}
+                      className="px-4 py-1.5 text-xs font-semibold rounded-xl bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition shadow-sm"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          )}
+        </div>
+
+        {/* Dedicated Unlink button in navbar when cursor/selection is on a link */}
+        {editor.isActive("link") && (
+          <button
+            type="button"
+            onClick={() => {
+              const { from, to } = editor.state.selection;
+              removeLinkFromEditor(editor, null, from !== to ? from + 1 : from);
+              setLinkPreview(null);
+              toast.success("Link removed");
+            }}
+            className="p-2 rounded transition text-xl flex items-center justify-center bg-white text-rose-600 hover:bg-rose-50 hover:text-rose-700 animate-in fade-in duration-150"
+            title="Remove link (Unlink)"
+          >
+            <FiTrash2 className="text-lg" />
+          </button>
+        )}
       </div>
 
       {/* Loading overlay — sits on top but editor stays mounted so Yjs can sync */}
@@ -1568,9 +2100,13 @@ export default function Editor() {
       {/* Main Content Area: Editor Canvas + Side Copilot Panel */}
       <div className="flex-1 flex overflow-hidden relative">
         {/* Scrollable Document Canvas */}
-        <div className="flex-1 overflow-y-auto bg-[#f8f9fa] flex justify-center items-start py-8 relative">
-          <div className="bg-white max-w-[1000px] w-full min-h-[1056px] shadow-sm border border-gray-200 rounded-lg p-8 md:p-12 mb-20 relative">
-            <div className="mx-auto w-full" style={{ maxWidth: 860 }}>
+        <div className={`flex-1 overflow-y-auto bg-[#f8f9fa] flex justify-center items-start ${isFullWidth ? "py-4 px-6 md:px-12" : "py-8 px-4"} relative transition-all duration-200`}>
+          <div className={`bg-white w-full min-h-[1056px] shadow-sm border border-gray-200/80 rounded-2xl mb-20 relative transition-all duration-200 ${
+            isFullWidth
+              ? "max-w-none p-8 md:p-14"
+              : "max-w-[960px] p-8 md:p-12"
+          }`}>
+            <div className={`mx-auto w-full transition-all duration-200 ${isFullWidth ? "max-w-none" : "max-w-[840px]"}`}>
               <EditorContent
                 editor={editor}
                 className="prose max-w-none text-left text-black tiptap-editor"
@@ -1708,6 +2244,81 @@ export default function Editor() {
               </div>
             </form>
           </div>
+        </div>
+      )}
+      {/* Floating Google Docs Style Link Preview Chip (shown on single click) */}
+      {linkPreview && (
+        <div
+          ref={linkPreviewRef}
+          style={{ top: linkPreview.top, left: linkPreview.left }}
+          className="fixed z-50 bg-white rounded-xl shadow-xl border border-gray-200/90 py-1.5 px-3 flex items-center gap-2.5 animate-in fade-in zoom-in-95 duration-150 select-none max-w-sm"
+        >
+          {/* Clickable Destination URL */}
+          <a
+            href={linkPreview.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1.5 max-w-[220px] truncate"
+            title={`Open ${linkPreview.href} in new tab (or Ctrl+Click in editor)`}
+          >
+            <FiExternalLink className="text-xs flex-shrink-0 text-blue-500" />
+            <span className="truncate">{linkPreview.href}</span>
+          </a>
+
+          <div className="w-[1px] h-4 bg-gray-200 flex-shrink-0" />
+
+          {/* Copy link button */}
+          <button
+            type="button"
+            onClick={() => {
+              navigator.clipboard.writeText(linkPreview.href);
+              toast.success("Link copied");
+            }}
+            className="p-1 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition"
+            title="Copy link"
+          >
+            <FiCopy className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Edit link button */}
+          <button
+            type="button"
+            onClick={() => {
+              const ed = editorRef.current;
+              if (ed && linkPreview.linkDom) {
+                const pos = linkPreview.pos ?? ed.view.posAtDOM(linkPreview.linkDom, 0);
+                ed.chain().focus().setTextSelection(pos).extendMarkRange("link").run();
+                const { from, to } = ed.state.selection;
+                linkRangeRef.current = { from, to };
+                setLinkText(linkPreview.text || "");
+                setLinkUrl(linkPreview.href || "");
+              }
+              setLinkPreview(null);
+              setShowLinkModal(true);
+            }}
+            className="p-1 rounded-md text-gray-500 hover:text-gray-800 hover:bg-gray-100 transition"
+            title="Edit link"
+          >
+            <FiEdit2 className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Remove link button */}
+          <button
+            type="button"
+            onClick={() => {
+              const ed = editorRef.current;
+              if (ed) {
+                removeLinkFromEditor(ed, linkPreview.linkDom, linkPreview.pos);
+              }
+              setLinkPreview(null);
+              toast.success("Link removed");
+            }}
+            className="flex items-center gap-1 px-2 py-1 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
+            title="Remove link (Unlink)"
+          >
+            <FiTrash2 className="w-3.5 h-3.5" />
+            <span>Remove</span>
+          </button>
         </div>
       )}
     </div>

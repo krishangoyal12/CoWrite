@@ -92,7 +92,6 @@ export const CommentThread = ({ comment, editor, onClose }) => {
 export const CommentPanel = ({ editor }) => {
   const [comments, setComments] = useState([]);
   const [activeComment, setActiveComment] = useState(null);
-  const { auth: user } = useAuth();
   
   useEffect(() => {
     if (!editor) return;

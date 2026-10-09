@@ -7,6 +7,7 @@ import TextAlign from "@tiptap/extension-text-align";
 import Underline from "@tiptap/extension-underline";
 import Color from "@tiptap/extension-color";
 import FontStyle from "../Extensions/FontStyle";
+import Link from "@tiptap/extension-link";
 import toast from "react-hot-toast";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
@@ -43,6 +44,14 @@ export default function PublicEditor() {
       FontStyle,
       Underline,
       Color,
+      Link.configure({
+        openOnClick: true,
+        HTMLAttributes: {
+          class: "text-blue-600 underline cursor-pointer hover:text-blue-800",
+          target: "_blank",
+          rel: "noopener noreferrer",
+        },
+      }),
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       Collaboration.configure({ document: ydoc }),
       CollaborationCursor.configure({

@@ -220,4 +220,38 @@ const leaveDocument = async (req, res) => {
   }
 };
 
-module.exports = { getAllDocuments, createDocument, updateDocument, deleteDocument, getDocumentById, addCollaborator, getPublicDocument, leaveDocument };
+const removeCollaborator = async (req, res) => {
+  try {
+    const doc = await Document.findById(req.params.id);
+    if (!doc) return res.status(404).json({ message: 'Document not found', success: false });
+
+    // Only document owner can revoke access
+    if (doc.owner.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Only the document owner can revoke access', success: false });
+    }
+
+    const { userId } = req.params;
+    if (!userId) {
+      return res.status(400).json({ message: 'Collaborator ID is required', success: false });
+    }
+
+    // Owner cannot remove themselves as a collaborator
+    if (userId === req.user.id) {
+      return res.status(400).json({ message: 'Owner access cannot be revoked', success: false });
+    }
+
+    doc.collaborators = doc.collaborators.filter(c => c.toString() !== userId);
+    await doc.save();
+    await doc.populate("collaborators", "email name username");
+
+    res.status(200).json({
+      success: true,
+      message: 'Access revoked successfully',
+      collaborators: doc.collaborators,
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error revoking access', error: error.message, success: false });
+  }
+};
+
+module.exports = { getAllDocuments, createDocument, updateDocument, deleteDocument, getDocumentById, addCollaborator, removeCollaborator, getPublicDocument, leaveDocument };

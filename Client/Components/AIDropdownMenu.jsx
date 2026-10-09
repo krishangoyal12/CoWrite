@@ -57,7 +57,6 @@ export const AIDropdownMenu = ({ editor, closeMenu }) => {
   const promptRef = useRef(null);
   const inputWrapperRef = useRef(null);
 
-  if (!editor) return null;
 
   // Close menu on Escape key press
   useEffect(() => {
@@ -97,20 +96,24 @@ export const AIDropdownMenu = ({ editor, closeMenu }) => {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [showPromptInput]);
 
+  if (!editor) return null;
+
   const handleItemClick = (command) => {
     command(editor);
     closeMenu();
   };
 
-  const handleGenerateContent = () => {
+  const handleGenerateContent = async () => {
     if (!customPrompt.trim()) return;
     const promptText = customPrompt;
+    setLoading(true);
     
-    // Close menu instantly to give immediate feedback
+    // Close menu to give immediate feedback
     closeMenu();
     
     // Execute AI command
     editor.commands.generateText({ task: "generate", prompt: promptText });
+    setLoading(false);
   };
 
   return (

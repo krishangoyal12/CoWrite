@@ -4,7 +4,7 @@ import { MdColorize, MdFormatStrikethrough, MdFormatUnderlined, MdFormatAlignLef
 import { BiHeading } from "react-icons/bi";
 import { FiMessageSquare } from "react-icons/fi";
 import { AIDropdownMenu } from "./AIDropdownMenu";
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 
 const COLOR_GRID = [
   "#000000", "#434343", "#666666", "#999999", "#cccccc", "#ffffff",

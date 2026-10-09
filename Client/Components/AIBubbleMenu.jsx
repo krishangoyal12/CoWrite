@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { BubbleMenu } from '@tiptap/react';
 
 export const AIBubbleMenu = ({ editor }) => {
-  const [isOpen, setIsOpen] = useState(false);
-  
   if (!editor) {
     return null;
   }
@@ -16,7 +14,7 @@ export const AIBubbleMenu = ({ editor }) => {
     <BubbleMenu 
       editor={editor}
       tippyOptions={{ duration: 100 }}
-      shouldShow={({ editor }) => hasSelection()}
+      shouldShow={() => hasSelection()}
       updateDelay={0}
     >
       <div className="flex gap-1 bg-white shadow-lg rounded-md p-1 border border-gray-200">

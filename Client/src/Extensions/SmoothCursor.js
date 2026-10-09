@@ -11,7 +11,6 @@ export const SmoothCursor = Extension.create({
     let currentX = 0;
     let currentY = 0;
     let animId = null;
-    let isTyping = false;
     let hideTimeout = null;
 
     const renderLoop = () => {
@@ -49,7 +48,6 @@ export const SmoothCursor = Extension.create({
 
       try {
         const coords = view.coordsAtPos(selection.from);
-        const domRect = view.dom.getBoundingClientRect();
 
         if (!cursorEl) {
           cursorEl = document.createElement('div');
@@ -74,7 +72,7 @@ export const SmoothCursor = Extension.create({
         if (!animId) {
           animId = requestAnimationFrame(renderLoop);
         }
-      } catch (err) {
+      } catch {
         // Fallback silently if position calculation is momentary
       }
     };

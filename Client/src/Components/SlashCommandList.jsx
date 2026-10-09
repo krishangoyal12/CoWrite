@@ -52,7 +52,9 @@ export const SlashCommandList = forwardRef(({ items, command }, ref) => {
         });
         return valid;
       }
-    } catch (e) {}
+    } catch {
+      // Use defaults if storage read fails
+    }
     return DEFAULT_SECTION_KEYS;
   });
 
@@ -223,7 +225,9 @@ export const SlashCommandList = forwardRef(({ items, command }, ref) => {
 
     try {
       localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(updated));
-    } catch (err) {}
+    } catch {
+      // Ignore localStorage write errors
+    }
   };
 
   // ================= DRAG & DROP: Items within a Section =================
@@ -276,7 +280,9 @@ export const SlashCommandList = forwardRef(({ items, command }, ref) => {
       filtered.push(...updatedItemIds);
       localStorage.setItem(ITEM_STORAGE_KEY, JSON.stringify(filtered));
       window.dispatchEvent(new Event('cowrite:slash-order-changed'));
-    } catch (err) {}
+    } catch {
+      // Ignore localStorage write errors
+    }
 
     setSelectedItemIdx(targetItemIdx);
     setDraggedItemInfo(null);
@@ -292,7 +298,9 @@ export const SlashCommandList = forwardRef(({ items, command }, ref) => {
       setActiveSectionIdx(0);
       setSelectedItemIdx(0);
       window.dispatchEvent(new Event('cowrite:slash-order-changed'));
-    } catch (err) {}
+    } catch {
+      // Ignore localStorage write errors
+    }
   };
 
   if (activeSections.length === 0) {

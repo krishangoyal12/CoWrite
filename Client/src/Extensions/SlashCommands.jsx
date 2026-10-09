@@ -209,7 +209,7 @@ export const getSuggestionItems = ({ query }) => {
       map.forEach((item) => reordered.push(item));
       orderedCommands = reordered;
     }
-  } catch (err) {
+  } catch {
     // Fall back to default order
   }
 
