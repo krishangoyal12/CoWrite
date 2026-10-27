@@ -32,6 +32,7 @@ import {
 } from "react-icons/md";
 import * as Y from "yjs";
 import { WebsocketProvider } from "y-websocket";
+import { IndexeddbPersistence } from "y-indexeddb";
 import { FormattingBubbleMenu } from "../../Components/FormattingBubbleMenu";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
@@ -423,27 +424,106 @@ export default function Editor() {
   const [provider] = useState(
     () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc)
   );
+  const [indexeddbProvider] = useState(
+    () => new IndexeddbPersistence(`cowrite-doc-${id}`, ydoc)
+  );
+
+  const isDirtyWhileOffline = useRef(false);
+  const reconnectDebounceTimer = useRef(null);
+  const docTitleRef = useRef(docTitle);
+  useEffect(() => {
+    docTitleRef.current = docTitle;
+  }, [docTitle]);
 
   useEffect(() => {
     const handleStatus = (event) => {
       if (event.status === "connected") {
-        setSyncStatus("synced");
+        if (provider.synced) {
+          setSyncStatus("synced");
+        } else {
+          setSyncStatus("saving");
+        }
       } else if (event.status === "connecting") {
         setSyncStatus("saving");
       } else {
         setSyncStatus("offline");
       }
     };
+
+    const handleSync = (isSynced) => {
+      if (isSynced) {
+        setSyncStatus("synced");
+
+        // Debounced flush of offline edits to MongoDB upon reconnection
+        if (isDirtyWhileOffline.current) {
+          if (reconnectDebounceTimer.current) {
+            clearTimeout(reconnectDebounceTimer.current);
+          }
+          reconnectDebounceTimer.current = setTimeout(async () => {
+            if (!isDirtyWhileOffline.current) return;
+            try {
+              const currentHtml = editorRef.current ? editorRef.current.getHTML() : "";
+              await authFetch(`${baseURL}/api/documents/${id}`, {
+                method: "PUT",
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: docTitleRef.current, content: currentHtml }),
+              });
+              isDirtyWhileOffline.current = false;
+            } catch (err) {
+              console.error("Failed to flush offline edits to MongoDB:", err);
+            }
+          }, 2500);
+        }
+      }
+    };
+
+    const handleOnline = () => {
+      fetchCollaborators();
+      if (!provider.wsconnected) {
+        provider.connect();
+      }
+    };
+
+    const handleOffline = () => {
+      setSyncStatus("offline");
+    };
+
     provider.on("status", handleStatus);
-    provider.on("sync", (isSynced) => {
-      if (isSynced) setSyncStatus("synced");
-    });
+    provider.on("sync", handleSync);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+
     return () => {
+      if (reconnectDebounceTimer.current) {
+        clearTimeout(reconnectDebounceTimer.current);
+      }
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
       provider.off("status", handleStatus);
+      provider.off("sync", handleSync);
       provider.destroy();
+      indexeddbProvider.destroy();
       ydoc.destroy();
     };
-  }, [provider, ydoc]);
+  }, [provider, indexeddbProvider, ydoc, id]);
+
+  // Track local edits made while disconnected
+  useEffect(() => {
+    if (!ydoc) return;
+    const handleDocEdit = (update, origin) => {
+      if (origin !== provider && origin !== indexeddbProvider) {
+        if (!navigator.onLine || !provider.wsconnected || !provider.synced) {
+          isDirtyWhileOffline.current = true;
+          setSyncStatus("offline");
+        }
+      }
+    };
+    ydoc.on("update", handleDocEdit);
+    return () => {
+      ydoc.off("update", handleDocEdit);
+    };
+  }, [ydoc, provider, indexeddbProvider]);
   
   const editorRef = useRef(null);
   const remoteClientsState = useRef(new Map());
@@ -845,12 +925,31 @@ export default function Editor() {
       const res = await authFetch(`${baseURL}/api/documents/${id}`, {
         credentials: "include",
       });
+      if (res.status === 403 || res.status === 404) {
+        toast.error(res.status === 403 ? "You no longer have access to this document" : "Document not found");
+        try {
+          await indexeddbProvider.clearData();
+        } catch (e) {}
+        localStorage.removeItem(`cowrite-meta-${id}`);
+        navigate("/dashboard");
+        return;
+      }
       const data = await res.json();
       if (res.ok && data.data) {
         const owner = data.data.owner;
         const collabs = data.data.collaborators || [];
         const allParticipants = [owner, ...collabs].filter(Boolean);
         setCollaborators(allParticipants);
+        try {
+          const cachedStr = localStorage.getItem(`cowrite-meta-${id}`);
+          if (cachedStr) {
+            const cached = JSON.parse(cachedStr);
+            cached.collaborators = allParticipants;
+            cached.owner = owner;
+            cached.ownerId = owner?._id || owner;
+            localStorage.setItem(`cowrite-meta-${id}`, JSON.stringify(cached));
+          }
+        } catch (e) {}
       }
     } catch {
       // Ignore network errors on passive fetch
@@ -919,61 +1018,147 @@ export default function Editor() {
         setLoading(false);
         return;
       }
+
+      // Check local cached metadata first (instant offline availability)
+      let cachedMeta = null;
       try {
-        const res = await authFetch(`${baseURL}/api/documents/${id}`, {
-          credentials: "include",
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error();
-        const title = data.data?.title || "Untitled Document";
+        const cachedRaw = localStorage.getItem(`cowrite-meta-${id}`);
+        if (cachedRaw) {
+          cachedMeta = JSON.parse(cachedRaw);
+        }
+      } catch (e) {
+        console.error("Failed to parse cached metadata", e);
+      }
+
+      if (cachedMeta) {
+        const title = cachedMeta.title || "Untitled Document";
         setDocTitle(title);
         if (title && title !== "Untitled Document") {
           isTitleCustomized.current = true;
-        } else {
-          isTitleCustomized.current = false;
         }
-        setDocOwnerId(data.data?.owner?._id || data.data?.owner);
-        setIsPublic(data.data?.isPublic || false);
+        setDocOwnerId(cachedMeta.ownerId);
+        setIsPublic(cachedMeta.isPublic || false);
+        if (cachedMeta.collaborators) {
+          setCollaborators(cachedMeta.collaborators);
+        }
+      }
 
-        const collabs = data.data?.collaborators || [];
-        const owner = data.data?.owner;
-        const allParticipants = [owner, ...collabs].filter(Boolean);
-        setCollaborators(allParticipants);
-
-        // Initialize editor content from database if Yjs document is empty or if sync is delayed/fails
-        if (data.data?.content) {
-          let contentInitialized = false;
-          const setInitialContent = () => {
-            if (contentInitialized) return;
-            const yxml = ydoc.getXmlFragment("default");
-            if (yxml.length === 0) {
-              editor.commands.setContent(data.data.content);
+      let serverData = null;
+      if (navigator.onLine) {
+        try {
+          const res = await authFetch(`${baseURL}/api/documents/${id}`, {
+            credentials: "include",
+          });
+          if (res.status === 403 || res.status === 404) {
+            toast.error(res.status === 403 ? "You no longer have access to this document" : "Document not found");
+            try {
+              await indexeddbProvider.clearData();
+            } catch (e) {}
+            localStorage.removeItem(`cowrite-meta-${id}`);
+            navigate("/dashboard");
+            return;
+          }
+          if (res.ok) {
+            const data = await res.json();
+            serverData = data.data;
+            const title = serverData?.title || "Untitled Document";
+            setDocTitle(title);
+            if (title && title !== "Untitled Document") {
+              isTitleCustomized.current = true;
+            } else {
+              isTitleCustomized.current = false;
             }
-            contentInitialized = true;
-          };
+            const ownerId = serverData?.owner?._id || serverData?.owner;
+            setDocOwnerId(ownerId);
+            setIsPublic(serverData?.isPublic || false);
 
-          if (provider.synced) {
-            setInitialContent();
+            const collabs = serverData?.collaborators || [];
+            const owner = serverData?.owner;
+            const allParticipants = [owner, ...collabs].filter(Boolean);
+            setCollaborators(allParticipants);
+
+            // Update local cached metadata
+            localStorage.setItem(
+              `cowrite-meta-${id}`,
+              JSON.stringify({
+                title,
+                ownerId,
+                owner,
+                collaborators: allParticipants,
+                isPublic: serverData?.isPublic || false,
+                updatedAt: serverData?.updatedAt,
+              })
+            );
           } else {
-            provider.once("sync", setInitialContent);
-            // Quick fallback timeout
-            setTimeout(setInitialContent, 300);
+            if (!cachedMeta) {
+              toast.error("Failed to load document");
+            }
+          }
+        } catch {
+          if (!cachedMeta) {
+            toast.error("Failed to load document");
           }
         }
+      } else {
+        if (!cachedMeta) {
+          toast.error("Offline: No local copy of this document found");
+        }
+      }
 
+      // Tier 1: Instant Local Load from IndexedDB
+      try {
+        await indexeddbProvider.whenSynced;
+      } catch (err) {
+        console.error("IndexedDB whenSynced error:", err);
+      }
+
+      const yxml = ydoc.getXmlFragment("default");
+      const hasLocalContent = yxml.length > 0;
+
+      if (hasLocalContent) {
+        // Document content already loaded from IndexedDB! Enable editor immediately.
         editor.setEditable(true);
         setLoading(false);
-      } catch {
-        toast.error("Failed to load document");
-        setDocTitle("Untitled Document");
-        setDocOwnerId(null);
-        editor.commands.setContent("<p></p>");
-        editor.setEditable(true);
-        setLoading(false);
+      } else {
+        // Tier 2 & Tier 3: Document is not in IndexedDB yet
+        let contentInitialized = false;
+        const setInitialContent = () => {
+          if (contentInitialized) return;
+          const currentLen = ydoc.getXmlFragment("default").length;
+          if (currentLen === 0 && serverData?.content) {
+            editor.commands.setContent(serverData.content);
+          }
+          editor.setEditable(true);
+          setLoading(false);
+          contentInitialized = true;
+        };
+
+        if (provider.synced) {
+          setInitialContent();
+        } else {
+          provider.once("sync", (isSynced) => {
+            if (isSynced) {
+              setInitialContent();
+            }
+          });
+          // Fallback if provider fails to sync in 3s (e.g. websocket server unreachable)
+          const fallbackTimer = setTimeout(() => {
+            if (!contentInitialized) {
+              setInitialContent();
+            }
+          }, 3000);
+
+          // If offline and empty, unlock editor immediately
+          if (!navigator.onLine) {
+            clearTimeout(fallbackTimer);
+            editor.setEditable(true);
+            setLoading(false);
+          }
+        }
       }
     };
     loadDocument();
-  }, [id, editor, user, provider, ydoc]);
+  }, [id, editor, user, provider, indexeddbProvider, ydoc]);
 
 
 
@@ -986,11 +1171,26 @@ export default function Editor() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ title: docTitle, content: editor ? editor.getHTML() : "" }),
       });
+      isDirtyWhileOffline.current = false;
       setSyncStatus("synced");
     } catch {
+      isDirtyWhileOffline.current = true;
       setSyncStatus("offline");
     }
   }, [id, docTitle, editor]);
+
+  // Keep local metadata title updated whenever docTitle changes
+  useEffect(() => {
+    if (!docTitle || id === "new") return;
+    try {
+      const cached = localStorage.getItem(`cowrite-meta-${id}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        parsed.title = docTitle;
+        localStorage.setItem(`cowrite-meta-${id}`, JSON.stringify(parsed));
+      }
+    } catch {}
+  }, [docTitle, id]);
 
   // Debounced title autosave
   useEffect(() => {

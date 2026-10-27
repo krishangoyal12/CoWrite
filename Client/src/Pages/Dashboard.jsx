@@ -288,6 +288,12 @@ export default function Dashboard() {
       if (res.ok) {
         setDocuments((docs) => docs.filter((doc) => doc._id !== deleteId));
         toast.success(isOwner ? "Document deleted" : "You've left the document");
+        try {
+          localStorage.removeItem(`cowrite-meta-${deleteId}`);
+          window.indexedDB?.deleteDatabase(`cowrite-doc-${deleteId}`);
+        } catch (e) {
+          console.error("Error clearing offline data for deleted document:", e);
+        }
       } else {
         toast.error(data.message || "Failed");
       }
