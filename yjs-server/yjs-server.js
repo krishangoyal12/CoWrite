@@ -1,12 +1,9 @@
 const http = require('http');
-const WebSocket = require('ws');
-const Y = require('yjs');
-const { setupWSConnection, setPersistence } = require('y-websocket/bin/utils');
-const { MongoClient } = require('mongodb');
-const { MongodbPersistence } = require('y-mongodb-provider');
 const path = require('path');
+const mongoose = require('mongoose');
 require('dotenv').config(); // Load yjs-server/.env if present
 require('dotenv').config({ path: path.join(__dirname, '../Server/.env') }); // Fallback to Server/.env
+const initYjs = require('../Server/Config/yjs');
 
 const port = parseInt(process.env.PORT || process.env.YJS_PORT || '1234', 10);
 const host = '0.0.0.0';
@@ -16,49 +13,19 @@ if (!process.env.DB_URI) {
   process.exit(1);
 }
 
-const client = new MongoClient(process.env.DB_URI);
-const db = client.db('cowrite_yjs'); // Specify a database name explicitly
-
-const mdb = new MongodbPersistence({ client, db }, {
-  collectionName: 'ytransactions',
-  flushSize: 100,
-  multipleCollections: false
-});
-
-setPersistence({
-  bindState: async (docName, ydoc) => {
-    try {
-      const persistedYdoc = await mdb.getYDoc(docName);
-      const newUpdates = Y.encodeStateAsUpdate(ydoc);
-      await mdb.storeUpdate(docName, newUpdates);
-      Y.applyUpdate(ydoc, Y.encodeStateAsUpdate(persistedYdoc));
-      ydoc.on('update', async (update) => {
-        try {
-          await mdb.storeUpdate(docName, update);
-        } catch (err) {
-          console.error(`[Yjs] Error storing update for ${docName}:`, err);
-        }
-      });
-    } catch (err) {
-      console.error(`[Yjs] Error in bindState for doc ${docName}:`, err);
-    }
-  },
-  writeState: async (docName, ydoc) => {
-    return new Promise(resolve => resolve());
-  }
-});
+// Ensure mongoose connection for document role checks
+mongoose.connect(process.env.DB_URI)
+  .then(() => console.log('[Yjs Server] Connected to MongoDB for auth/role validation'))
+  .catch((err) => console.error('[Yjs Server] MongoDB connection error:', err));
 
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Yjs WebSocket server is running with MongoDB persistence');
+  res.end('CoWrite Secured Yjs WebSocket server is running with MongoDB persistence');
 });
 
-const wss = new WebSocket.Server({ server });
-
-wss.on('connection', (conn, req) => {
-  setupWSConnection(conn, req, { docName: req.url.slice(1).split('?')[0] });
-});
+// Initialize secured Yjs WebSocket server attached to HTTP server
+initYjs(server, process.env.DB_URI);
 
 server.listen(port, host, () => {
-  console.log(`Yjs WebSocket server running on ${host}:${port} with DB persistence`);
+  console.log(`Secured Yjs WebSocket server running on ${host}:${port} with DB persistence and JWT verification`);
 });

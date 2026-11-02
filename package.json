@@ -1,4 +1,9 @@
 {
+  "name": "cowrite",
+  "version": "1.0.0",
+  "scripts": {
+    "test": "npm --prefix Server test"
+  },
   "dependencies": {
     "y-websocket": "^1.4.5"
   }

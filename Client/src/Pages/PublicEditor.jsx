@@ -26,9 +26,17 @@ export default function PublicEditor() {
   const [errorMsg, setErrorMsg] = useState("");
 
   const [ydoc] = useState(() => new Y.Doc());
-  const [provider] = useState(
-    () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc)
-  );
+  const [provider] = useState(() => {
+    const token = localStorage.getItem("token");
+    return new WebsocketProvider(
+      import.meta.env.VITE_WEBSOCKET_URL,
+      id,
+      ydoc,
+      {
+        params: token ? { token } : {}
+      }
+    );
+  });
 
   useEffect(() => {
     return () => {
