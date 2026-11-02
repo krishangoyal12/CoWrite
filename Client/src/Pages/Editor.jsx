@@ -18,9 +18,9 @@ import { AskDocSidebar } from "../Components/AskDocSidebar";
 import { AIBubbleMenu } from "../../Components/AIBubbleMenu";
 import { AIDropdownMenu } from "../../Components/AIDropdownMenu";
 import toast from "react-hot-toast";
-import { FiBold, FiItalic, FiRotateCcw, FiRotateCw, FiLink, FiExternalLink, FiCopy, FiTrash2, FiEdit2 } from "react-icons/fi";
+import { FiBold, FiItalic, FiRotateCcw, FiRotateCw, FiLink, FiExternalLink, FiCopy, FiTrash2, FiEdit2, FiChevronDown } from "react-icons/fi";
 import Link from "@tiptap/extension-link";
-import { LuSparkles, LuCircleHelp, LuUserPlus, LuUsers, LuCloud, LuCloudOff, LuCheck, LuMaximize2, LuMinimize2 } from "react-icons/lu";
+import { LuSparkles, LuCircleHelp, LuUserPlus, LuUsers, LuCloud, LuCloudOff, LuCheck, LuMaximize2, LuMinimize2, LuEye } from "react-icons/lu";
 import { MdColorize } from "react-icons/md";
 import { MdFormatStrikethrough, MdFormatUnderlined } from "react-icons/md";
 import { BiHeading } from "react-icons/bi";
@@ -408,7 +408,10 @@ export default function Editor() {
   };
 
   const [collaboratorEmail, setCollaboratorEmail] = useState("");
+  const [collaboratorRole, setCollaboratorRole] = useState("editor"); // 'editor' | 'viewer'
   const [collaborators, setCollaborators] = useState([]);
+  const [userRole, setUserRole] = useState("editor"); // 'owner' | 'editor' | 'viewer'
+  const [updatingRoleId, setUpdatingRoleId] = useState(null);
   const [adding, setAdding] = useState(false);
   const [isPublic, setIsPublic] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
@@ -421,9 +424,17 @@ export default function Editor() {
   const [syncStatus, setSyncStatus] = useState("synced"); // 'synced' | 'saving' | 'offline'
 
   const [ydoc] = useState(() => new Y.Doc());
-  const [provider] = useState(
-    () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc)
-  );
+  const [provider] = useState(() => {
+    const token = localStorage.getItem("token");
+    return new WebsocketProvider(
+      import.meta.env.VITE_WEBSOCKET_URL,
+      id,
+      ydoc,
+      {
+        params: token ? { token } : {}
+      }
+    );
+  });
   const [indexeddbProvider] = useState(
     () => new IndexeddbPersistence(`cowrite-doc-${id}`, ydoc)
   );
@@ -489,8 +500,15 @@ export default function Editor() {
       setSyncStatus("offline");
     };
 
+    const handlePermissionDenied = (reason) => {
+      toast.error(typeof reason === "string" ? reason : "Write permission denied: view-only access");
+      setUserRole("viewer");
+      if (editor) editor.setEditable(false);
+    };
+
     provider.on("status", handleStatus);
     provider.on("sync", handleSync);
+    provider.on("permission-denied", handlePermissionDenied);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
 
@@ -502,6 +520,7 @@ export default function Editor() {
       window.removeEventListener("offline", handleOffline);
       provider.off("status", handleStatus);
       provider.off("sync", handleSync);
+      provider.off("permission-denied", handlePermissionDenied);
       provider.destroy();
       indexeddbProvider.destroy();
       ydoc.destroy();
@@ -937,16 +956,27 @@ export default function Editor() {
       const data = await res.json();
       if (res.ok && data.data) {
         const owner = data.data.owner;
-        const collabs = data.data.collaborators || [];
-        const allParticipants = [owner, ...collabs].filter(Boolean);
+        const ownerId = owner?._id || owner;
+        const ownerObj = typeof owner === "object" ? { ...owner, role: "owner" } : { _id: owner, role: "owner" };
+        const collabs = (data.data.collaborators || []).map(c => typeof c === "object" ? { ...c, role: "editor" } : { _id: c, role: "editor" });
+        const viewList = (data.data.viewers || []).map(v => typeof v === "object" ? { ...v, role: "viewer" } : { _id: v, role: "viewer" });
+        const allParticipants = [ownerObj, ...collabs, ...viewList].filter(Boolean);
         setCollaborators(allParticipants);
+
+        const isOwner = ownerId === user?.id;
+        const isEditor = collabs.some(c => (c._id || c) === user?.id);
+        const isViewer = viewList.some(v => (v._id || v) === user?.id) || (!isOwner && !isEditor && data.data.isPublic);
+        const currentRole = data.userRole || (isOwner ? "owner" : (isEditor ? "editor" : (isViewer ? "viewer" : "editor")));
+        setUserRole(currentRole);
+
         try {
           const cachedStr = localStorage.getItem(`cowrite-meta-${id}`);
           if (cachedStr) {
             const cached = JSON.parse(cachedStr);
             cached.collaborators = allParticipants;
             cached.owner = owner;
-            cached.ownerId = owner?._id || owner;
+            cached.ownerId = ownerId;
+            cached.userRole = currentRole;
             localStorage.setItem(`cowrite-meta-${id}`, JSON.stringify(cached));
           }
         } catch (e) {}
@@ -962,18 +992,20 @@ export default function Editor() {
   }, [id]);
 
   const handleAddCollaborator = async () => {
+    if (!collaboratorEmail || adding) return;
     setAdding(true);
     try {
       const res = await authFetch(`${baseURL}/api/documents/${id}/collaborators`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: collaboratorEmail }),
+        body: JSON.stringify({ email: collaboratorEmail, role: collaboratorRole }),
       });
       const data = await res.json();
       if (res.ok) {
-        toast.success("Collaborator added!");
+        toast.success(`Collaborator added as ${collaboratorRole === "viewer" ? "Viewer" : "Editor"}!`);
         setCollaboratorEmail("");
+        setCollaboratorRole("editor");
         fetchCollaborators();
       } else {
         toast.error(data.message || "Failed to add collaborator");
@@ -982,6 +1014,29 @@ export default function Editor() {
       toast.error("Failed to add collaborator");
     }
     setAdding(false);
+  };
+
+  const handleChangeRole = async (collaboratorId, newRole) => {
+    if (!collaboratorId || !newRole) return;
+    setUpdatingRoleId(collaboratorId);
+    try {
+      const res = await authFetch(`${baseURL}/api/documents/${id}/collaborators`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: collaboratorId, role: newRole }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(`Role changed to ${newRole === "viewer" ? "Viewer" : "Editor"}`);
+        fetchCollaborators();
+      } else {
+        toast.error(data.message || "Failed to update role");
+      }
+    } catch {
+      toast.error("Failed to update role");
+    }
+    setUpdatingRoleId(null);
   };
 
   const [revokingId, setRevokingId] = useState(null);
@@ -1072,10 +1127,18 @@ export default function Editor() {
             setDocOwnerId(ownerId);
             setIsPublic(serverData?.isPublic || false);
 
-            const collabs = serverData?.collaborators || [];
+            const collabs = (serverData?.collaborators || []).map(c => typeof c === "object" ? { ...c, role: "editor" } : { _id: c, role: "editor" });
+            const viewList = (serverData?.viewers || []).map(v => typeof v === "object" ? { ...v, role: "viewer" } : { _id: v, role: "viewer" });
             const owner = serverData?.owner;
-            const allParticipants = [owner, ...collabs].filter(Boolean);
+            const ownerObj = typeof owner === "object" ? { ...owner, role: "owner" } : { _id: owner, role: "owner" };
+            const allParticipants = [ownerObj, ...collabs, ...viewList].filter(Boolean);
             setCollaborators(allParticipants);
+
+            const isOwner = ownerId === user?.id;
+            const isEditor = collabs.some(c => (c._id || c) === user?.id);
+            const isViewer = viewList.some(v => (v._id || v) === user?.id) || (!isOwner && !isEditor && serverData?.isPublic);
+            const calculatedRole = data.userRole || (isOwner ? "owner" : (isEditor ? "editor" : (isViewer ? "viewer" : "editor")));
+            setUserRole(calculatedRole);
 
             // Update local cached metadata
             localStorage.setItem(
@@ -1087,6 +1150,7 @@ export default function Editor() {
                 collaborators: allParticipants,
                 isPublic: serverData?.isPublic || false,
                 updatedAt: serverData?.updatedAt,
+                userRole: calculatedRole,
               })
             );
           } else {
@@ -1116,8 +1180,8 @@ export default function Editor() {
       const hasLocalContent = yxml.length > 0;
 
       if (hasLocalContent) {
-        // Document content already loaded from IndexedDB! Enable editor immediately.
-        editor.setEditable(true);
+        // Document content already loaded from IndexedDB! Enable editor if not viewer.
+        editor.setEditable(userRole !== "viewer");
         setLoading(false);
       } else {
         // Tier 2 & Tier 3: Document is not in IndexedDB yet
@@ -1128,7 +1192,7 @@ export default function Editor() {
           if (currentLen === 0 && serverData?.content) {
             editor.commands.setContent(serverData.content);
           }
-          editor.setEditable(true);
+          editor.setEditable(userRole !== "viewer");
           setLoading(false);
           contentInitialized = true;
         };
@@ -1148,10 +1212,10 @@ export default function Editor() {
             }
           }, 3000);
 
-          // If offline and empty, unlock editor immediately
+          // If offline and empty, unlock editor immediately if permitted
           if (!navigator.onLine) {
             clearTimeout(fallbackTimer);
-            editor.setEditable(true);
+            editor.setEditable(userRole !== "viewer");
             setLoading(false);
           }
         }
@@ -1159,6 +1223,12 @@ export default function Editor() {
     };
     loadDocument();
   }, [id, editor, user, provider, indexeddbProvider, ydoc]);
+
+  useEffect(() => {
+    if (editor) {
+      editor.setEditable(userRole !== "viewer");
+    }
+  }, [userRole, editor]);
 
 
 
@@ -1630,6 +1700,13 @@ export default function Editor() {
                   <span>Saved</span>
                 </span>
               )}
+
+              {userRole === "viewer" && (
+                <span className="flex items-center gap-1.5 text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-0.5 rounded-full text-[11px] font-semibold shadow-2xs" title="You have read-only access to this document">
+                  <LuEye className="text-xs" />
+                  <span>Viewing only</span>
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -1688,31 +1765,49 @@ export default function Editor() {
                   </div>
                 </div>
 
-                {/* Invite Email Form */}
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!collaboratorEmail || adding) return;
-                    handleAddCollaborator();
-                  }}
-                  className="flex gap-2 mb-4"
-                >
-                  <input
-                    type="email"
-                    value={collaboratorEmail}
-                    onChange={(e) => setCollaboratorEmail(e.target.value)}
-                    placeholder="Enter collaborator's email"
-                    className="flex-1 border border-gray-200 px-3.5 py-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-2xs"
-                    disabled={adding}
-                  />
-                  <button
-                    type="submit"
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-xs active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap"
-                    disabled={adding || !collaboratorEmail}
+                {/* Invite Email Form (Only Owner can invite) */}
+                {user?.id === docOwnerId ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (!collaboratorEmail || adding) return;
+                      handleAddCollaborator();
+                    }}
+                    className="flex gap-2 mb-4"
                   >
-                    {adding ? "Adding..." : "Add"}
-                  </button>
-                </form>
+                    <input
+                      type="email"
+                      value={collaboratorEmail}
+                      onChange={(e) => setCollaboratorEmail(e.target.value)}
+                      placeholder="Enter collaborator's email"
+                      className="flex-1 min-w-0 border border-gray-200 px-3 py-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-2xs"
+                      disabled={adding}
+                    />
+                    <div className="relative flex-shrink-0">
+                      <select
+                        value={collaboratorRole}
+                        onChange={(e) => setCollaboratorRole(e.target.value)}
+                        disabled={adding}
+                        className="h-full bg-gray-50 border border-gray-200 text-gray-700 text-xs font-semibold px-2.5 py-2 pr-6 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer appearance-none shadow-2xs"
+                      >
+                        <option value="editor">Editor</option>
+                        <option value="viewer">Viewer</option>
+                      </select>
+                      <FiChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 w-3 h-3" />
+                    </div>
+                    <button
+                      type="submit"
+                      className="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2 rounded-xl text-sm font-semibold transition-all shadow-xs active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 whitespace-nowrap flex-shrink-0"
+                      disabled={adding || !collaboratorEmail}
+                    >
+                      {adding ? "Adding..." : "Add"}
+                    </button>
+                  </form>
+                ) : (
+                  <p className="text-xs text-gray-400 italic mb-4">
+                    Only the document owner can invite new members.
+                  </p>
+                )}
 
                 {/* Collaborators List */}
                 <div className="border-t border-gray-100 pt-3">
@@ -1759,13 +1854,37 @@ export default function Editor() {
                               </div>
                             </div>
                             <div className="flex items-center gap-1.5 flex-shrink-0">
-                              <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
-                                isOwner
-                                  ? "bg-amber-50 text-amber-700 border border-amber-200"
-                                  : "bg-blue-50 text-blue-600 border border-blue-100"
-                              }`}>
-                                {isOwner ? "Owner" : "Editor"}
-                              </span>
+                              {isOwner ? (
+                                <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 flex-shrink-0">
+                                  Owner
+                                </span>
+                              ) : user?.id === docOwnerId ? (
+                                <div className="relative flex-shrink-0">
+                                  <select
+                                    value={c.role || "editor"}
+                                    disabled={updatingRoleId === cId}
+                                    onChange={(e) => handleChangeRole(cId, e.target.value)}
+                                    className={`text-[11px] font-semibold px-2 py-0.5 pr-5 rounded-lg border appearance-none cursor-pointer focus:outline-none transition-colors shadow-2xs ${
+                                      c.role === "viewer"
+                                        ? "bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100/70"
+                                        : "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100/70"
+                                    }`}
+                                    title={`Change role for ${cName}`}
+                                  >
+                                    <option value="editor">Editor</option>
+                                    <option value="viewer">Viewer</option>
+                                  </select>
+                                  <FiChevronDown className="absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400 w-3 h-3" />
+                                </div>
+                              ) : (
+                                <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full flex-shrink-0 ${
+                                  c.role === "viewer"
+                                    ? "bg-purple-50 text-purple-700 border border-purple-200"
+                                    : "bg-blue-50 text-blue-600 border border-blue-100"
+                                }`}>
+                                  {c.role === "viewer" ? "Viewer" : "Editor"}
+                                </span>
+                              )}
 
                               {/* Owner can revoke access for any non-owner collaborator */}
                               {user?.id === docOwnerId && !isOwner && (
@@ -1909,16 +2028,29 @@ export default function Editor() {
             {isFullWidth ? <LuMinimize2 className="text-base" /> : <LuMaximize2 className="text-base" />}
           </button>
 
-          <button
-            onClick={handleSave}
-            className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition"
-          >
-            Save
-          </button>
+          {userRole !== "viewer" && (
+            <button
+              onClick={handleSave}
+              className="bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-medium px-4 py-2 rounded-lg shadow-sm transition"
+            >
+              Save
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="flex gap-2 items-center bg-gray-50 px-8 py-2 shadow-sm border-b border-gray-100 relative">
+      {userRole === "viewer" ? (
+        <div className="flex items-center justify-between bg-purple-50/70 border-b border-purple-200/60 px-8 py-2.5 text-xs text-purple-900 select-none animate-in fade-in duration-200">
+          <div className="flex items-center gap-2.5 font-medium">
+            <span className="p-1 bg-purple-100 text-purple-700 rounded-md">
+              <LuEye className="w-4 h-4" />
+            </span>
+            <span>You have <strong>view-only access</strong> to this document. Editing tools and changes are disabled.</span>
+          </div>
+          <span className="text-purple-600 font-medium hidden sm:inline">Collaborator edits will sync in real time</span>
+        </div>
+      ) : (
+        <div className="flex gap-2 items-center bg-gray-50 px-8 py-2 shadow-sm border-b border-gray-100 relative">
         <button
           onClick={() => editor.chain().focus().undo().run()}
           disabled={!editor.can().chain().focus().undo().run()}
@@ -2287,6 +2419,7 @@ export default function Editor() {
           </button>
         )}
       </div>
+      )}
 
       {/* Loading overlay — sits on top but editor stays mounted so Yjs can sync */}
       {loading && (
