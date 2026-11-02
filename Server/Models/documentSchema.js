@@ -18,6 +18,10 @@ const documentSchema = new Schema({
         type: Schema.Types.ObjectId,
         ref: 'User'
     }],
+    viewers:[{
+        type: Schema.Types.ObjectId,
+        ref: 'User'
+    }],
     isPublic: {
         type: Boolean,
         default: false
@@ -26,6 +30,7 @@ const documentSchema = new Schema({
 
 documentSchema.index({ owner: 1, updatedAt: -1 });
 documentSchema.index({ collaborators: 1, updatedAt: -1 });
+documentSchema.index({ viewers: 1, updatedAt: -1 });
 
 const documentModel = model('Document', documentSchema)
 module.exports = documentModel

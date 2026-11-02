@@ -62,10 +62,59 @@
 - **Public View Link**: Document owners can enable a read-only, sanitized public link for viewers without requiring authentication
 
 ### 🔐 Security & Auth
-- JWT-based authentication with **HttpOnly cookies**
+- JWT-based authentication with **HttpOnly cookies** and query parameter tokens for WebSockets
 - Google OAuth login & signup
-- Protected REST API endpoints
-- Static read-only snapshot mode for public viewers completely detached from live WebSocket sync
+- Protected REST API endpoints with role-based access control
+- **WebSocket Upgrade Verification**: Handshake verification rejecting unauthenticated (401) or unauthorized (403) connection attempts
+- **Role-Based WebSocket Write Blocking**: Real-time write interception preventing viewers from applying unauthorized document mutations
+
+---
+
+## 🔐 WebSocket Security: Authentication vs. Authorization
+
+### 1. What is Authentication?
+**Authentication** is the process of verifying a user's identity—verifying *who* they are.
+
+* **In CoWrite**: When a user registers or logs in via `/api/auth/login` (or Google OAuth), CoWrite verifies their credentials and issues a cryptographically signed JSON Web Token (JWT) containing their user ID (`{ id: user._id }`).
+* **Where it happens in CoWrite**:
+  * **REST API**: Handled in `Server/Middlewares/authMiddleware.js`. Every protected HTTP request passes through `verifyToken`, which extracts the token from cookies (`req.cookies.token`) or authorization headers (`Authorization: Bearer <token>`) and verifies it using `jwt.verify(token, process.env.JWT_SECRET)`.
+  * **WebSocket Server**: Handled during the HTTP upgrade / handshake in `Server/Config/yjs.js`. Before establishing the WebSocket connection, the server extracts the JWT from the connection query parameters (`?token=...`), headers, or cookies and verifies it via `jwt.verify`. If no token is provided or the token is invalid/expired, the handshake is immediately aborted with `HTTP/1.1 401 Unauthorized`.
+
+### 2. What is Authorization?
+**Authorization** is the process of determining what permissions an authenticated user possesses on a specific resource—verifying *what* they are allowed to do.
+
+* **In CoWrite**: Once a user's identity is authenticated, CoWrite determines their role for a target document:
+  * **Owner** (`doc.owner === user.id`): Full permissions to read, write, share, invite/remove collaborators, and delete the document.
+  * **Editor** (`user.id` in `doc.collaborators`): Permissions to join the room, read document content, and write real-time edits.
+  * **Viewer** (`user.id` in `doc.viewers` or document `isPublic: true`): Permission to join the room and read document content in real time, but **strictly blocked from writing**.
+  * **Unauthorized / No Access**: If an authenticated user is not an owner, editor, or viewer and the document is private, their connection attempt is rejected.
+* **Where it happens in CoWrite**:
+  * **REST API**: In `Server/Controllers/documentControllers.js`. For example, only the document owner can delete the document or add/remove collaborators, while editors and owners can view or update.
+  * **WebSocket Upgrade Handshake**: In `Server/Config/yjs.js` during `server.on('upgrade')`. The server queries the document from the database and resolves the user's role with `getUserDocumentRole(doc, userId)`. If the user does not possess any role for that document, the handshake is rejected with `HTTP/1.1 403 Forbidden`.
+  * **WebSocket Message Sync (Write Protection)**: In `Server/Config/yjs.js` inside `setupSecureWSConnection`. When incoming binary Yjs synchronization messages arrive (`messageYjsSyncStep2` or `messageYjsUpdate`), the server checks `conn.userRole`. If the user holds the `viewer` role, any write attempt is **blocked**: the server skips applying the update to the shared `Y.Doc`, suppresses broadcast to collaborators, and returns a `permission-denied` auth frame.
+
+---
+
+## 🧪 Running the WebSocket Security Tests
+
+The automated test suite verifies:
+1. **No token (rejected)**: Connection without a token fails during handshake with HTTP 401 Unauthorized.
+2. **Valid token for unauthorized document (rejected)**: Valid JWT for a user with no document access fails during handshake with HTTP 403 Forbidden.
+3. **Viewer trying to write (blocked)**: Viewer successfully connects and reads, but write operations (`SyncStep2` / `Update`) are intercepted and blocked without altering the server document.
+4. **Contrast verification**: Document owners/editors can successfully write updates.
+
+### Test Command
+
+Run from the repository root:
+```bash
+npm test
+```
+
+Or from the `Server/` directory:
+```bash
+cd Server
+npm test
+```
 
 ---
 

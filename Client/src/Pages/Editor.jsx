@@ -421,9 +421,17 @@ export default function Editor() {
   const [syncStatus, setSyncStatus] = useState("synced"); // 'synced' | 'saving' | 'offline'
 
   const [ydoc] = useState(() => new Y.Doc());
-  const [provider] = useState(
-    () => new WebsocketProvider(import.meta.env.VITE_WEBSOCKET_URL, id, ydoc)
-  );
+  const [provider] = useState(() => {
+    const token = localStorage.getItem("token");
+    return new WebsocketProvider(
+      import.meta.env.VITE_WEBSOCKET_URL,
+      id,
+      ydoc,
+      {
+        params: token ? { token } : {}
+      }
+    );
+  });
   const [indexeddbProvider] = useState(
     () => new IndexeddbPersistence(`cowrite-doc-${id}`, ydoc)
   );
