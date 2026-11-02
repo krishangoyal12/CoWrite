@@ -6,10 +6,11 @@ const getAllDocuments = async (req, res) => {
     const documents = await Document.find({
       $or: [
         { owner: req.user.id },
-        { collaborators: req.user.id }
+        { collaborators: req.user.id },
+        { viewers: req.user.id }
       ]
     })
-      .select('title owner collaborators isPublic createdAt updatedAt')
+      .select('title owner collaborators viewers isPublic createdAt updatedAt')
       .populate('owner', '_id name email')
       .sort({ updatedAt: -1 })
       .lean();
@@ -48,7 +49,7 @@ const createDocument = async (req, res) => {
       success: true,
     });
   } catch (error) {
-    console.error(error)
+    console.error(error);
     res.status(500).json({
       message: 'Error creating document',
       error: error.message,
@@ -63,12 +64,14 @@ const updateDocument = async (req, res) => {
     if (!doc) {
       return res.status(404).json({ message: 'Document not found', success: false });
     }
-    if (doc.owner.toString() !== req.user.id && !doc.collaborators.map(id => id.toString()).includes(req.user.id)) {
-      return res.status(403).json({ message: 'Unauthorized access', success: false });
+    const isOwner = doc.owner.toString() === req.user.id;
+    const isCollab = doc.collaborators.map(id => id.toString()).includes(req.user.id);
+    if (!isOwner && !isCollab) {
+      return res.status(403).json({ message: 'Unauthorized access: write permission required', success: false });
     }
     if (req.body.title !== undefined) doc.title = req.body.title;
     if (req.body.content !== undefined) doc.content = req.body.content;
-    if (req.body.isPublic !== undefined && doc.owner.toString() === req.user.id) doc.isPublic = req.body.isPublic; // Only owner can change public status
+    if (req.body.isPublic !== undefined && isOwner) doc.isPublic = req.body.isPublic; // Only owner can change public status
     await doc.save();
     res.status(200).json({
       message: 'Document updated successfully',
@@ -111,7 +114,8 @@ const getDocumentById = async (req, res) => {
   try {
     const doc = await Document.findById(req.params.id)
       .populate("owner", "name email")
-      .populate("collaborators", "name email");
+      .populate("collaborators", "name email")
+      .populate("viewers", "name email");
 
     if (!doc) {
       return res.status(404).json({ message: 'Document not found', success: false });
@@ -124,15 +128,23 @@ const getDocumentById = async (req, res) => {
       ? doc.collaborators.map(c => c._id ? c._id.toString() : c.toString())
       : [];
 
-    if (
-      ownerId !== req.user.id &&
-      !collaboratorIds.includes(req.user.id)
-    ) {
+    const viewerIds = Array.isArray(doc.viewers)
+      ? doc.viewers.map(v => v._id ? v._id.toString() : v.toString())
+      : [];
+
+    const isOwner = ownerId === req.user.id;
+    const isEditor = collaboratorIds.includes(req.user.id);
+    const isViewer = viewerIds.includes(req.user.id) || (!isOwner && !isEditor && doc.isPublic);
+
+    if (!isOwner && !isEditor && !isViewer) {
       return res.status(403).json({ message: 'Unauthorized access', success: false });
     }
 
+    const userRole = isOwner ? 'owner' : (isEditor ? 'editor' : 'viewer');
+
     res.status(200).json({
       data: doc,
+      userRole,
       success: true,
     });
   } catch (error) {
@@ -189,12 +201,26 @@ const addCollaborator = async (req, res) => {
     }
     if (!userId) return res.status(400).json({ message: "No user specified" });
 
-    if (!doc.collaborators.map(id => id.toString()).includes(userId)) {
-      doc.collaborators.push(userId);
-      await doc.save();
+    const role = req.body.role === 'viewer' ? 'viewer' : 'editor';
+    if (!doc.collaborators) doc.collaborators = [];
+    if (!doc.viewers) doc.viewers = [];
+
+    if (role === 'viewer') {
+      if (!doc.viewers.map(id => id.toString()).includes(userId)) {
+        doc.viewers.push(userId);
+      }
+      doc.collaborators = doc.collaborators.filter(id => id.toString() !== userId);
+    } else {
+      if (!doc.collaborators.map(id => id.toString()).includes(userId)) {
+        doc.collaborators.push(userId);
+      }
+      doc.viewers = doc.viewers.filter(id => id.toString() !== userId);
     }
-    await doc.populate("collaborators", "email username");
-    res.json({ success: true, collaborators: doc.collaborators });
+
+    await doc.save();
+    await doc.populate("collaborators", "email username name");
+    await doc.populate("viewers", "email username name");
+    res.json({ success: true, collaborators: doc.collaborators, viewers: doc.viewers });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -210,8 +236,9 @@ const leaveDocument = async (req, res) => {
       return res.status(403).json({ message: 'You are the owner. Delete the document instead.', success: false });
     }
 
-    // Remove the user from collaborators
-    doc.collaborators = doc.collaborators.filter(c => c.toString() !== req.user.id);
+    // Remove the user from collaborators and viewers
+    doc.collaborators = (doc.collaborators || []).filter(c => c.toString() !== req.user.id);
+    doc.viewers = (doc.viewers || []).filter(v => v.toString() !== req.user.id);
     await doc.save();
 
     res.status(200).json({ message: 'You have left the document', success: true });
@@ -240,14 +267,17 @@ const removeCollaborator = async (req, res) => {
       return res.status(400).json({ message: 'Owner access cannot be revoked', success: false });
     }
 
-    doc.collaborators = doc.collaborators.filter(c => c.toString() !== userId);
+    doc.collaborators = (doc.collaborators || []).filter(c => c.toString() !== userId);
+    doc.viewers = (doc.viewers || []).filter(v => v.toString() !== userId);
     await doc.save();
     await doc.populate("collaborators", "email name username");
+    await doc.populate("viewers", "email name username");
 
     res.status(200).json({
       success: true,
       message: 'Access revoked successfully',
       collaborators: doc.collaborators,
+      viewers: doc.viewers,
     });
   } catch (error) {
     res.status(500).json({ message: 'Error revoking access', error: error.message, success: false });
